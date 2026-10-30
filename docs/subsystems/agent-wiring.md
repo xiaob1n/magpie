@@ -39,6 +39,59 @@ something else shows up as drift.
 4. **Drift.** As the Agents page is drawn, `Drift` compares the config with `applied.json`. It runs `Check` first, then each field. An agent pointed at magpie through a reverse proxy is still on magpie (#1985, davisjiahao: a company's nginx at `https://ai.corp.example/magpie`). `wiringOff`, where most agents' `Check` compares a URL, and the checks of their own (Claude Code's managed settings, Reasonix's provider) take a URL that isn't magpie's when it ends with magpie's path, the rest is an http or https address on another machine (`onAnotherMachine`) or one on this machine's loopback with a path of its own (`loopbackWithPath`: the reporter's compliance proxy at `http://127.0.0.1:8788/claude-code-anthropic/<route>`; `proxyBase`), and `GET <rest>/` there answers as the gateway's own `GET /` does (`{"name":"magpie"}`, `magpieAt` in [`reach.go`](../../internal/agent/reach.go), tried in the background like `reachProbe`). Something else there (a relay CC Switch put in) is `unwired`, as is an address on this machine's loopback without a path, which is magpie's on an older port and is never tried. Until the answer is known it isn't drift, so Reconnect isn't offered and doesn't write the proxy away; port moves (`OnGateway`, `Rewire`) re-set only `unwired` agents, so they leave it too. Codex keeps such an address by magpie's key, as for #816 (`codexKeptGateway`: http or https, any port, a path before magpie's, loopback with a path). A model picked in Claude Code keeps it too once magpie has answered there (`surelyMagpie`; `routed` and `gwAt` in `claude.go`), so a proxy every request must go through isn't bypassed; before that, or at a relay, a pick points Claude Code at this magpie. Tests stub `magpieAt` in `TestMain` as known and not magpie. When the config is right and points at an address off loopback (a WSL twin under NAT, or this machine's Codex at an address the user kept, #816), it tries that address ([`reach.go`](../../internal/agent/reach.go)): in the background, at most every 20 s, never waited for. When nothing answers there while the gateway answers on loopback, the drift is `unreachable` (#1013), with what has to listen there: Share on local network, the user's portproxy, Windows' firewall. Then it checks whether the agent's latest use (`LastUsed`, `Reached`) reached the gateway: a request Codex's log says went to the host its config keeps magpie at, or one the gateway saw from it after (`lastSeen`), reached it.
 5. **Disconnect.** `Disconnect` puts back what the stash kept and forgets the record. It also marks the agent disconnected (`<id>.disconnected` in the stash, `Disconnected`) until the user connects it again (`connect`, or an `Apply` that leaves it wired): nothing magpie does by itself puts magpie back in meanwhile, neither a start's `Sync` nor Codex's account failover nor #701's magpie API wiring (paynezhuang on Discord: Codex had `openai_base_url` back after every update). A Codex thread keeps the provider it was started on, so one started while magpie was Codex's provider (its API, or the takeover of a used-up account) still sends to `/v1` after Disconnect or a switch back to ChatGPT. One of Codex's own models asked there that no account in magpie serves (an OpenAI model of Codex's models cache or the catalog), from Codex on this computer with no held gateway key, goes on Codex's own ChatGPT sign-in through `codexBackend`, magpie's key and `x-openai-actor-authorization` left behind (`codexOwnOffMagpie` in [`codex_own_v1.go`](../../internal/gateway/codex_own_v1.go)); it was answered 404 "magpie knows no model" (iuengei on Discord). With the sign-in out of reach (subscription accounts off, signed out, expired) the 404 says why and to start a new thread. `TestCodexOwnModelOnMagpieThreadGoesOnSignIn`, `TestCodexOwnModelOnMagpieThreadStaysHere`, `TestCodexOwnModelOnMagpieThreadSaysWhy`.
 
+## OmO category editor
+
+The configuration API and inline GUI are implemented. All 32 pinned
+Chromium/WebKit English/Chinese regressions passed in one run, and the
+desktop/mobile light/dark screenshot matrix passed. The editor covers local
+OmO's global category and named-agent configuration. This is not
+the main-model wiring in [`omo.go`](../../internal/agent/omo.go), which uses
+`piLike` and the agent folder's `settings.json` and `models.json`. The editor
+reads the user's `~/.omo/omo.jsonc`, or `omo.json` when JSONC is absent, and
+saves to the file it read. It lists only explicitly defined categories,
+not runtime defaults. WSL copies, project files, profiles and harness blocks
+are outside its editing scope; it does not change wiring records.
+
+The same document also returns four named builtin `agents`, in stable order:
+`explore`, `librarian`, `plan-consultant`, `plan-reviewer`. Missing overrides
+are ready entries with an empty `models` array and no reasoning; these are
+not materialized runtime defaults. Only an explicit edit creates an override.
+Unknown custom agents are neither listed nor editable and survive unchanged.
+A present top-level `agents` must be an object, or reading and saving fail.
+Named agents accept canonical string/object `models` and `reasoning`. A legacy
+single `model` is exposed as one editable model at index 0. An explicit model
+edit writes canonical `models`, which takes precedence, but preserves the old
+`model` and every other field; reasoning-only edits leave it untouched.
+
+Only existing categories' and the four named agents' `models` and `reasoning` may change. Models can be
+added, replaced, removed or reordered, with at least one nonblank model ID;
+existing object entries retain their other fields. Reasoning can be unset
+(remove the field), a standard level or a nonempty custom string. Legacy
+`model`/`fallback_models` categories have model editing disabled, without
+automatic migration; their independent reasoning remains editable. Invalid
+category structures are reported, not coerced. Other fields, categories,
+comments and `_migrations` must survive unchanged.
+
+The implemented API and inline editor contract are in
+[GUI app shell](gui-shell.md#omo-categories-api-and-inline-rows).
+The editor's `omoCategoriesDetails` and `requestOmoCategories` live in
+[`omo-categories.js`](../../internal/gui/assets/omo-categories.js).
+The page loads `start.js` with a literal script tag; `start.js` waits for
+the category import to finish before initializing the page.
+Save rereads the source and checks its raw-byte SHA-256 revision before a
+field-level atomic write. A stale revision is a conflict, not permission to
+overwrite. This check does not eliminate a noncooperating external write
+between the last check and rename.
+
+The installed OmO 5.1.51 Senpi task component loads categories at component
+registration and retains that configuration for later task planning; its
+session-start handler reconciles task state rather than reloading category
+files. Advise restarting OmO after saving, not immediate hot reload or a
+guarantee that opening a session in the same process suffices. Running tasks
+are not retargeted. Project, profile and harness layers can override global
+values, so the panel is not a view of a session's final merged settings.
+This reload boundary is static evidence, not an end-to-end reload test.
+
 ## Constraints and failure behavior
 
 - magpie only removes what it wrote. Anything else in an agent's config stays as it was.
