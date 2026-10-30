@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -229,6 +230,12 @@ func (s *Server) askSearchAPI(ctx context.Context, a provider.SearchAPI, query s
 		// (api-docs.deepseek.com/guides/search); its page text is its
 		// summary, so need_content is left false
 		post("/v1/tools/search", map[string]any{"query": firstRunes(query, deepseekQueryMax), "count": searchHits})
+	case "volcengine":
+		// Doubao Search Custom (volcengine.com/docs/87772/2272953): a
+		// query of 1 to 100 characters, web pages only, and only those
+		// with a URL (NeedUrl leaves out its 火山如意 cards, which have none)
+		post("/search_api/web_search", map[string]any{"Query": firstRunes(query, volcQueryMax), "SearchType": "web",
+			"Count": searchHits, "Filter": map[string]any{"NeedUrl": true}})
 	case "searxng":
 		get("/search", url.Values{"q": {query}, "format": {"json"}})
 	case "you":
@@ -290,8 +297,18 @@ func (s *Server) askSearchAPI(ctx context.Context, a provider.SearchAPI, query s
 	if res.StatusCode >= 300 && res.StatusCode < 400 && res.Header.Get("Location") != "" {
 		return nil, fmt.Errorf("%s: it sends the search on to %s, which isn't given its key; set that address instead", res.Status, res.Header.Get("Location"))
 	}
-	if res.StatusCode >= 300 {
+	status := res.StatusCode
+	var volcMsg string
+	if a.Vendor == "volcengine" {
+		// its error is in ResponseMetadata.Error, a code beside the
+		// status, and may come with a 200
+		status, volcMsg = volcSearchError(b, status)
+	}
+	if status >= 300 {
 		msg := provider.APIError(b, res.Status)
+		if volcMsg != "" {
+			msg = volcMsg
+		}
 		if a.Vendor == "you" {
 			// You.com's error is a code ("payment_required"), its message
 			// beside it the words
@@ -305,8 +322,8 @@ func (s *Server) askSearchAPI(ctx context.Context, a provider.SearchAPI, query s
 		if a.Key != "" {
 			msg = strings.ReplaceAll(msg, a.Key, provider.MaskSearchKey(a.Key))
 		}
-		if keyRefusal(res.StatusCode) {
-			return nil, searchRefused{res.StatusCode, msg, res.Header.Get("Retry-After")}
+		if keyRefusal(status) {
+			return nil, searchRefused{status, msg, res.Header.Get("Retry-After")}
 		}
 		return nil, errors.New(msg)
 	}
@@ -322,8 +339,11 @@ func (s *Server) askSearchAPI(ctx context.Context, a provider.SearchAPI, query s
 
 // readSearchAPI reads the pages out of a search API's reply.
 func readSearchAPI(vendor string, b []byte) ([]foundPage, error) {
-	if vendor == "you" {
+	switch vendor {
+	case "you":
 		return readYouSearch(b)
+	case "volcengine":
+		return readVolcSearch(b)
 	}
 	type result struct {
 		Title       string `json:"title"`
@@ -383,6 +403,91 @@ func readSearchAPI(vendor string, b []byte) ([]foundPage, error) {
 // deepseekQueryMax is the most characters DeepSeek's Search API takes in a
 // query; a longer one is turned away with 400.
 const deepseekQueryMax = 128
+
+// volcQueryMax is the most characters Doubao Search takes in a query.
+const volcQueryMax = 100
+
+// volcSearchError is the status a Doubao Search reply stands for, and its
+// error's words: its ResponseMetadata.Error, read by its code, as a key
+// turned away (403), out of credit (402) or rate limited (429), or as
+// the status it came with; a reply with no error is its own status.
+func volcSearchError(b []byte, status int) (int, string) {
+	var out struct {
+		ResponseMetadata struct {
+			Error *struct {
+				CodeN   int
+				Code    string
+				Message string
+			}
+		}
+	}
+	if json.Unmarshal(b, &out) != nil || out.ResponseMetadata.Error == nil {
+		return status, ""
+	}
+	e := out.ResponseMetadata.Error
+	code := e.CodeN
+	if code == 0 {
+		code, _ = strconv.Atoi(e.Code)
+	}
+	msg := strings.TrimSpace(fmt.Sprintf("%d %s", code, e.Message))
+	switch code {
+	case 10401, 10403, 10409:
+		// a key it doesn't know, a service not opened for it, a plan's
+		// key that can't search the web this way
+		return 403, msg
+	case 10406, 10408, 10410, 10412:
+		// the free searches spent and none paid for, no plan, a plan
+		// spent
+		return 402, msg
+	case 700429:
+		return 429, msg
+	}
+	if status < 300 {
+		status = 502
+	}
+	return status, msg
+}
+
+// readVolcSearch reads Doubao Search's reply: its pages under
+// Result.WebResults, each with a Summary (what its docs give a model:
+// the page's text about the query) and a short Snippet.
+func readVolcSearch(b []byte) ([]foundPage, error) {
+	type hit struct {
+		Title, Url, Summary, Snippet, PublishTime string
+	}
+	var out struct {
+		Result *struct {
+			WebResults []hit
+		}
+	}
+	if err := json.Unmarshal(b, &out); err != nil {
+		return nil, err
+	}
+	if out.Result == nil {
+		return nil, errors.New("no Result in it")
+	}
+	var pages []foundPage
+	for _, h := range out.Result.WebResults {
+		if h.Url == "" {
+			continue
+		}
+		text := h.Summary
+		if strings.TrimSpace(text) == "" {
+			text = h.Snippet
+		}
+		title := searchPlain(h.Title)
+		if title == "" {
+			title = h.Url
+		}
+		age := h.PublishTime
+		if strings.HasPrefix(age, "1970-01-01") {
+			// its time for a page it has none for
+			age = ""
+		}
+		pages = append(pages, foundPage{Title: title, URL: h.Url, Text: clipText(searchPlain(text), pageText), Age: age})
+	}
+	return pages, nil
+}
 
 // firstRunes is s cut to at most n characters, with nothing added.
 func firstRunes(s string, n int) string {

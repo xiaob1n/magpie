@@ -561,6 +561,21 @@ type ompModel struct {
 	Context   int          `yaml:"contextWindow,omitempty"`
 	MaxTokens int          `yaml:"maxTokens,omitempty"`
 	Input     []string     `yaml:"input,omitempty"`
+	// Cost is the model's price in USD per million tokens, the unit omp's
+	// calculateUsageCost divides by (omp 18.9.1, pi-catalog
+	// src/models.ts). omp's custom provider prices a call by it alone;
+	// without it omp takes a bundled model's its fuzzy id match finds, and
+	// a group/* id matches none, so its calls cost 0 (taotao7 on Discord).
+	Cost *ompCost `yaml:"cost,omitempty"`
+}
+
+// ompCost is a model's cost in omp's models.yml (omp 18.9.1,
+// models-config-schema-bundle.ts: input, output, cacheRead, cacheWrite).
+type ompCost struct {
+	Input      float64 `yaml:"input"`
+	Output     float64 `yaml:"output"`
+	CacheRead  float64 `yaml:"cacheRead"`
+	CacheWrite float64 `yaml:"cacheWrite"`
 }
 
 type ompThinking struct {
@@ -632,6 +647,9 @@ func ompProviderAt(gw, version string) ompProviderEntry {
 	ms := []ompModel{}
 	for _, m := range magpieModels("omp") {
 		e := ompModel{ID: m.ID, Name: m.Name, Context: m.Context, MaxTokens: maxTokens(m)}
+		if p := m.Price; p != nil {
+			e.Cost = &ompCost{Input: p.Input, Output: p.Output, CacheRead: p.CacheRead, CacheWrite: p.CacheWrite}
+		}
 		mode := "effort"
 		switch {
 		case slices.Contains(m.APIs, string(provider.Responses)):
