@@ -2320,6 +2320,30 @@ func EntryPricer(st settings.Settings, find func(string) (Group, []Member, bool)
 	}
 }
 
+// AgentPricer is EntryPricer for the model list magpie writes into an
+// agent's own config (Pi's, omp's, OpenCode's cost): a group whose
+// members cost the same is priced as EntryPricer prices it, and one whose
+// members differ at the member it sends to first — a manual group's pick,
+// else its first member not switched off — since that is the member a
+// request goes to while it answers, and an agent that prices calls by its
+// config (omp's custom provider, taotao7 on Discord) otherwise counts
+// every call to the group at 0. A first member in a fast mode, or with no
+// known price, leaves the group unpriced, as before. The list is read
+// afresh at each Sync, so the price follows the group's members.
+func AgentPricer(st settings.Settings, find func(string) (Group, []Member, bool)) func(Entry) (catalog.Price, bool) {
+	same, all := EntryPricer(st, find), All()
+	return func(e Entry) (catalog.Price, bool) {
+		if pr, ok := same(e); ok || e.Group == "" {
+			return pr, ok
+		}
+		_, ms, ok := find(e.ID)
+		if !ok || len(ms) == 0 || ms[0].Fast {
+			return catalog.Price{}, false
+		}
+		return priceIn(st, all, ms[0].Provider.ID, ms[0].Model)
+	}
+}
+
 // PriceRateOK says what is wrong with a provider's price rate, "" when
 // nothing: from 0 (none) to 1000, in steps of 0.001.
 func PriceRateOK(r float64) string {

@@ -1,7 +1,8 @@
 package provider
 
 // Search APIs answer a model's web search when no provider can (#419):
-// Tavily, Brave Search, Exa, Firecrawl, You.com, a SearXNG of the user's. They are
+// Tavily, Brave Search, Exa, Firecrawl, You.com, DeepSeek, Volcengine's
+// Doubao Search, a SearXNG of the user's. They are
 // kept in providers.json beside the providers, their keys with theirs.
 
 import (
@@ -60,6 +61,9 @@ var SearchVendors = []SearchVendor{
 	{ID: "firecrawl", Name: "Firecrawl", Base: "https://api.firecrawl.dev", KeysURL: "https://www.firecrawl.dev/app/api-keys"},
 	{ID: "you", Name: "You.com", Base: "https://ydc-index.io", KeysURL: "https://you.com/platform", KeyOptional: true},
 	{ID: "deepseek", Name: "DeepSeek", Base: "https://api.deepseek.com", KeysURL: "https://platform.deepseek.com/api_keys"},
+	// Volcengine's Doubao Search Custom (豆包搜索 Custom版, once 联网搜索 /
+	// 融合信息搜索), with an API key from its console (CyberCaius on Discord)
+	{ID: "volcengine", Name: "Doubao Search (Volcengine)", Base: "https://open.feedcoopapi.com", KeysURL: "https://console.volcengine.com/search-infinity/api-key"},
 	{ID: "searxng", Name: "SearXNG", KeyOptional: true},
 }
 

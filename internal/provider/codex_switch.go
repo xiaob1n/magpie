@@ -202,7 +202,8 @@ func usedPast(q SubscriptionQuota, share float64, now time.Time) bool {
 // one it is on: the account magpie moved it off, once that has room again
 // (back); else, when the one it is on is spent, the first of its other
 // accounts that are on in magpie, in the order they were saved, whose
-// allowance is known and not spent. ok is false when the agent should stay.
+// allowance is known and not spent. A saved Claude account not read yet is
+// read then (readSpare). ok is false when the agent should stay.
 func NextLogin(ctx context.Context, agent string) (from, to string, back, ok bool) {
 	if leftAlone(agent) {
 		return "", "", false, false // magpie has no say in its sign-in, or was told to leave it be
@@ -280,11 +281,34 @@ func NextLogin(ctx context.Context, agent string) (from, to string, back, ok boo
 		u[user] = q
 	}
 	for _, l := range spares {
-		if q, known := u[l.User]; known && q.Error == "" && !q.Held && !usedPast(q, share, now) && !capped(l.User, q) {
+		q, known := u[l.User]
+		if agent == "claude" && (!known || unreadSpare(q)) {
+			// a saved Claude account magpie has no reading of: read now,
+			// by Claude Code's /usage in its own directory, one account at
+			// a time and only till one has room
+			q, known = readSpare(ctx, l)
+		}
+		if known && q.Error == "" && !q.Held && !usedPast(q, share, now) && !capped(l.User, q) {
 			return from, l.User, false, true
 		}
 	}
 	return "", "", false, false
+}
+
+// unreadSpare says q, a saved Claude account's reading, has nothing to go
+// by: never read (a /usage not run), or a read that failed for a reason
+// not the account's own. Its /usage is then run (readSpare).
+func unreadSpare(q SubscriptionQuota) bool {
+	return q.Error != "" && (readDeferred(q.Error) || !claudeUsageDenied.MatchString(q.Error))
+}
+
+// readSpare is the reading of the saved Claude account l, its /usage run
+// now when claudeWindows allows (spareRead: once, then again only after a
+// wait), rather than the minute's cached "not read yet".
+func readSpare(ctx context.Context, l Login) (SubscriptionQuota, bool) {
+	forgetLoginReading(l)
+	q, known := someLoginUsage(readingSpare(ctx), l.Agent, l.User)[l.User]
+	return q, known
 }
 
 // SwitchWhenSpent signs agent in to the next of its accounts when the one

@@ -753,7 +753,8 @@ answers as that API does (#1580). Empty is the vendor's own
 (`SearchVendor.Base`); SearXNG has none, so its URL is required. `check`
 takes only an `http://` or `https://` URL with a host and no `?query` or
 `#fragment`, since `askSearchAPI` puts the vendor's path after it
-(`/search`, `/res/v1/web/search`, `/v2/search`, `/v1/tools/search`) with the slash at its end
+(`/search`, `/res/v1/web/search`, `/v2/search`, `/v1/tools/search`,
+`/search_api/web_search`) with the slash at its end
 trimmed. The request goes through the gateway's client, so it follows
 magpie's proxy settings as the vendor's own address does
 (`TestSearchFollowsTheSearchersProxy`).
@@ -823,7 +824,12 @@ A refused key rests (`searchRestFor`): 401 and 403 ten minutes ("turned
 away"), 402 an hour ("out of credit"), a rate limit its `Retry-After` held
 to 30 seconds through 10 minutes (a minute without one). 432 and 433 are
 Tavily's plan and pay-as-you-go limits, out of credit from Tavily only; from
-any other vendor they rest as a rate limit. A resting key is not dropped:
+any other vendor they rest as a rate limit. Doubao Search (Volcengine)
+says its error in `ResponseMetadata.Error`, possibly with a 200, so
+`volcSearchError` reads it by its code first: 10401, 10403 and 10409 as
+403, 10406, 10408, 10410 and 10412 (no free searches left, none paid
+for, a plan missing or spent) as 402, 700429 as 429; any other code is a
+plain error (`TestVolcengineSearchAPI`). A resting key is not dropped:
 it is asked after every key that isn't, the one back soonest first, so a
 search still has every key to fall back on. A key that answers wakes.
 Rests are held by vendor and a hash of the key (`searchKeyID`), never the
