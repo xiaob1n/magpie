@@ -2174,6 +2174,15 @@ func providerRoutes(mux *http.ServeMux, w Windows) {
 			provider.DismissCodexDaemon()
 		case "dismiss-app":
 			provider.DismissCodexApp()
+		case "restart-app":
+			// the Codex app left on the account before: its app-server
+			// restarted now, after the user said yes (nb5p_hQ on X)
+			ctx, cancel := context.WithTimeout(r.Context(), 2*time.Minute)
+			defer cancel()
+			if err := agent.RestartSwitchedCodexApp(ctx); err != nil {
+				fail(rw, err)
+				return
+			}
 		default:
 			http.NotFound(rw, r)
 			return

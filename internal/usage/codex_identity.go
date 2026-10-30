@@ -210,6 +210,7 @@ func (s *pickScratch) release() {
 	clear(s.slab)
 	s.slab = s.slab[:0]
 	keptPicks.Store(s)
+	lingerScratch()
 }
 
 // codexChunkResponsePairs are the Codex calls the gateway and a session file

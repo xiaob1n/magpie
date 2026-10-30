@@ -48,6 +48,9 @@ func MergeExternal(native []Session, external []ExternalSession) []Session {
 		for _, id := range s.Copies {
 			seen[agentID{s.Agent, id}] = struct{}{}
 		}
+		for _, id := range s.Subs {
+			seen[agentID{s.Agent, id}] = struct{}{}
+		}
 	}
 	added := func(e ExternalSession) bool {
 		_, dup := seen[agentID{e.Agent, e.ID}]

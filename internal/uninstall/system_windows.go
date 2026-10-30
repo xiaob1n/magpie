@@ -35,20 +35,39 @@ func unregisterScheme(exe string) error {
 }
 
 // webData is WebView2's profile of an installed magpie: %APPDATA%\<exe
-// name> (portable, it is in the data folder already).
+// name>, and the one a magpie installed from a download keeps under the
+// download's name (appdir.WebView, update.Settle). Portable, it is in the
+// data folder already.
 func webData() []string {
 	if appdir.Portable() != "" {
 		return nil
 	}
 	exe, err := os.Executable()
-	a := appdir.Getenv("APPDATA")
-	if err != nil || a == "" {
+	if err != nil {
 		return nil
 	}
-	p := filepath.Join(a, filepath.Base(exe))
-	// only a folder WebView2 made: its EBWebView inside
-	if _, err := os.Stat(filepath.Join(p, "EBWebView")); err != nil {
+	return profiles(appdir.Getenv("APPDATA"), filepath.Base(exe), appdir.WebView())
+}
+
+// profiles is webData's folders in appData: the exe's own and the noted
+// one, each only where WebView2 made it (its EBWebView inside). A note
+// naming a folder anywhere else is not followed.
+func profiles(appData, exeName, noted string) []string {
+	if appData == "" {
 		return nil
 	}
-	return []string{p}
+	var out []string
+	for _, p := range []string{filepath.Join(appData, exeName), noted} {
+		if p == "" || !strings.EqualFold(filepath.Clean(filepath.Dir(p)), filepath.Clean(appData)) {
+			continue
+		}
+		if len(out) > 0 && strings.EqualFold(filepath.Clean(out[0]), filepath.Clean(p)) {
+			continue
+		}
+		if _, err := os.Stat(filepath.Join(p, "EBWebView")); err != nil {
+			continue
+		}
+		out = append(out, p)
+	}
+	return out
 }

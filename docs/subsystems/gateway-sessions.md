@@ -56,7 +56,17 @@ listed, read and deleted as Pi's (one file to the trash, nothing beside
 it; Raft starts afresh without it), with no resume command, no carry and
 no trace export (the gateway's Pi identity has those calls). Verification:
 `TestRaftSessions`, `TestRaftIsPiToTheGateway`, `TestRaftDeleteRestore`,
-`TestRaftSlockHome`. On `/api/sessions/manage`, in its
+`TestRaftSlockHome`. An omp session stands for its subagents and advisor
+too (`Session.Subs`, `subIDs` in
+[`sessions.go`](../../internal/sessions/sessions.go)): each one's file in
+the session's artifacts folder (`Kid.jsonl`, `__advisor.jsonl`) has a
+header id of its own, and omp sends that id, not the main session's, in
+`x-session-affinity`. The file's calls are counted in the main session, so
+the gateway's `omp|<sub id>` is its own in the same places as Raft's `pi|`
+key, and is never a second session counted again (Jumy, Discord 10-30:
+`TestOmpSubagentsAreTheSessionsToTheGateway`,
+`TestOmpSubagentCountedOnceWithTheGateway`). A Claude Code session's
+copies (`Copies`) are among its keys the same way. On `/api/sessions/manage`, in its
 counts as in its list, and on `/api/sessions/delete`, a native session is any
 session file the agent keeps, one nothing was said in too, with no limit
 (`sessions.NativeIDs`); one pass over the agents' files (`sessions.Manage`)

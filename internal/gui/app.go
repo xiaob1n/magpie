@@ -107,6 +107,10 @@ type host struct {
 	loading map[*application.WebviewWindow]bool
 	// the main window placed as it was last left (placeMain), and so shown
 	placed atomic.Pointer[application.WebviewWindow]
+
+	// the quick panel's shortcut bound now, "" for none (panelkey_app.go)
+	keyMu    sync.Mutex
+	panelKey string
 }
 
 // whenReady runs fn once the main window can be shown safely.
@@ -312,6 +316,19 @@ func Run(version string, showMain bool, link string) error {
 	if devRole() == "backend" {
 		return devBackend(func(w Windows) http.Handler { return Handler(w, startBackend()) })
 	}
+	// Windows: the app opened from Downloads (or the Desktop, or a zip)
+	// opens the copy installed in the user's programs folder, putting
+	// itself there first, and Open at login opens that one from now on
+	if from, to := update.Settle(); to != "" {
+		err := update.Forward(from, to)
+		if err == nil {
+			if err := autostart.Repoint(from, to); err != nil {
+				log.Println("open at login:", err)
+			}
+			return nil
+		}
+		log.Println("install:", err)
+	}
 	// A restart to update on a Mac or Linux started this one beside the
 	// magpie before, which hands it the gateway (handover.go).
 	startExe, _ = update.Executable()
@@ -323,6 +340,8 @@ func Run(version string, showMain bool, link string) error {
 	// After an update off the Mac, the old process starts this one and then
 	// quits; let it go before looking for the gateway.
 	update.AwaitPredecessor()
+	// installed from a download just now: what magpie left beside it goes
+	update.Settled()
 	// the Mac's second launch hands over to the magpie already running
 	if runningAlready(showMain || OpenPanel, link) {
 		return nil
@@ -561,6 +580,7 @@ func Run(version string, showMain bool, link string) error {
 		}
 	}
 	h.watchTrayUsage()
+	h.startPanelKey(before)
 	// Omarchy's bar shows magpie once: as its widget (Settings → Bar
 	// icon) or as the tray's item, not both
 	onBarIcon = h.setTrayInBar
@@ -800,6 +820,8 @@ func (h *host) leaveMenuBar() {
 			h.main.Hide()
 		}
 		setDock(false, false)
+		// and its shortcut, for the new version to bind
+		go h.dropPanelKey()
 	})
 }
 
