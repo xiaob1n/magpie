@@ -2571,6 +2571,7 @@ func Handler(w Windows, gw *gateway.Server) http.Handler {
 		rw.WriteHeader(http.StatusNoContent)
 	})
 	agentModelsAPI(mux)
+	omoCategoriesAPI(mux)
 	speedsAPI(mux)
 	devListen(mux)
 	return noFramedAPI(held(mux))

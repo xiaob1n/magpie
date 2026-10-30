@@ -1,7 +1,5 @@
-// The window's start, loaded last: app.js, the plugins' pages and the
-// scripts after app.js are all there, so the first page shown has its
-// code (the Usage page's is a plugin's, run after app.js).
-// the plugins' pages wired up (kernel.js), before the first is shown
+// 类别模块就绪后再启动页面，避免首次渲染缺少入口回调。
+import(document.querySelector("#omoCategoriesScript").href).then(() => {
 magpie.start();
 navHides(); // the pages built-in plugins switched off have, from boot.js
 // The window opens on the page the reader last left, as a Mac app comes back
@@ -23,3 +21,4 @@ else if (mode === "window" && !gatewayMode && !sideNav()) slide($("#nav"), "nav"
 // in gateway mode the first page is Providers, Agents' tab gone
 if (gatewayMode) setGatewayMode(true);
 load();
+});

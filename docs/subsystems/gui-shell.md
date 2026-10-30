@@ -37,6 +37,114 @@ three.
 
 ## Constraints and failure behavior
 
+### OmO categories API and inline rows
+
+The shared document now includes `agents`, using the same entry schema as
+`categories`, in fixed order `explore`, `librarian`, `plan-consultant`,
+`plan-reviewer`. An absent override is `{ "name": "explore", "status": "ready",
+"models": [] }` with reasoning omitted, not a runtime fallback. POST changes
+accept optional `scope`: omitted means categories; explicit values must be
+`"categories"` or `"agents"` (including rejection of null and empty strings).
+An agent change is, for example,
+`{"scope":"agents","name":"explore","models":[{"model":"vendor/model"}]}`.
+Only the four names may be edited or created; no arbitrary agent creation.
+Categories and agents use one revision and one atomic save, including mixed
+batches; duplicate names are rejected within a scope, not across scopes.
+No separate endpoint or revision exists for agents.
+
+Legacy named `model` is returned as `models:[{model:"value",index:0,object:false}]`
+and is editable. Model edits write `models`, preserving the old scalar and all
+unknown fields. A canonical `models` array takes precedence on subsequent
+reads. Missing agents have no configured flag. Indexed object model edits
+preserve extra parameters exactly as category edits do. A malformed top-level
+`agents` object fails GET and POST instead of being overwritten. These backend
+capabilities do not by themselves assert that the panel displays agent rows.
+
+The API and GUI are implemented as inline rows under Agents > OmO, for the
+local `omo` row only. It must not route `omo@wsl:*` to local files. The editor
+shows the actual global file path
+and category names from that file. It edits model lists and their order,
+plus reasoning, without editing the main model, project configuration,
+profiles or harness blocks. Configuration preservation and runtime loading
+boundaries are owned by
+[agent wiring](agent-wiring.md#omo-category-editor).
+
+Implemented routes on the existing [`Handler`](../../internal/gui/api.go),
+owned by [`omoCategoriesAPI`](../../internal/gui/omo_categories.go):
+
+- `GET /api/agents/omo/categories` returns `path`,
+  `revision`, `status`, `categories` and the four named `agents`, outside
+  `/api/state`'s hot path.
+  Missing files, empty categories and read/parse failures remain distinct.
+- `POST /api/agents/omo/categories` takes `revision` and `changes` for
+  existing categories' and the four named agents' models/reasoning. It
+  returns reread data on
+  success. Invalid input is 400, a missing file 404, a stale revision 409,
+  permission I/O errors 403, and other read/write/parse errors 500.
+  Decoder failures return `{error:string}`; configuration failures return
+  the configuration response plus `error`. A conflict can have
+  `status:"ready"` because the current file was read successfully.
+
+POST accepts exactly one non-null JSON object, rejects unknown struct fields
+at every nested level and rejects trailing JSON or non-JSON content:
+
+```json
+{"revision":"<file SHA-256>","changes":[{"name":"quick","models":[{"model":"vendor/model","index":0}],"reasoning":{"value":"high"}},{"scope":"agents","name":"explore","reasoning":{"value":"max"}}]}
+```
+
+Omitting `models` or `reasoning` leaves that field unchanged. A model's
+original `index` retains its object metadata; omitting the index adds a
+string entry. `reasoning.value:null` removes reasoning; a string sets it.
+Success returns category rows with `name`, `status` (`ready`, `legacy` or
+`error`), optional `error`, `models` (`model`, `index`, `object`) and optional
+`reasoning`. Both routes accept no arbitrary file path or agent selection.
+Handler supplies `noFramedAPI`; authentication is provided by the outer
+`webGuard`/`webHandler` server stack, not by Handler itself. Existing method
+and server-stack protections remain in place.
+
+The inline editor's `omoCategoriesDetails` and `requestOmoCategories` are in
+[`omo-categories.js`](../../internal/gui/assets/omo-categories.js).
+[`index.html`](../../internal/gui/assets/index.html) loads `start.js` with a
+literal `<script src="start.js"></script>` tag;
+[`start.js`](../../internal/gui/assets/start.js) waits for the category import
+to finish before initializing the page. Expanded OmO details show Subagents immediately after New sessions, then
+Categories, using the same left section label and inline name, model and
+reasoning columns as Claude Code's Tiers. There is no separate settings entry,
+menu item or dialog. Every row remains visible.
+A per-agent controller outside the DOM reads once on first expansion and keeps
+drafts, disclosure state and in-flight requests across collapse and agent-list
+rebuilds. It binds each new container; responses redraw only the current
+connected container, without fetching again on a rebuild. Additional models are
+collapsed behind a counted disclosure; expansion survives draft rerenders.
+Expanded lists support edit, reorder, add and remove, with primary model
+editing kept in the category row. The footer shows the global path and
+restart/override guidance, with explicit Save and Cancel.
+Its model picker reuses the catalog but
+keeps existing out-of-catalog IDs
+visible and allows full custom IDs. Reasoning offers unset, off, minimal,
+low, medium, high, xhigh, max and auto, plus nonempty custom strings. Object
+model entries keep their extra parameters; the panel does not edit them.
+Legacy model formats and invalid categories remain visibly unsupported
+rather than appearing as an empty editable model list.
+
+Save is explicit, disabled without changes and protected against duplicate
+submission. Cancel resets the inline draft without closing agent details or
+sending a POST. Failed saves retain drafts; a revision
+conflict offers Reload and confirms before discarding dirty edits. Successful
+saves replace the draft with server-reread values. No file watcher is added.
+Conservative guidance is: "Edits the local global OmO configuration, not the
+session's final merged settings. Project, profile and harness settings can
+override these values. Saved changes do not alter running tasks. Restart
+OmO to load the changes."
+
+Isolated-HOME Handler tests, live HTTP GET/POST/GET with disk inspection and a
+race/shuffle run cover the API. All 32 pinned Chromium/WebKit English/Chinese
+GUI regressions passed in one run, with desktop/mobile light/dark screenshots
+inspected. The targeted Go command is
+`go test -tags nogui ./internal/agent ./internal/gui ./internal/edit`; UI
+checks use the repository's `make test-ui` entry point. No real OmO model task
+is needed.
+
 ### Allowance card refreshes
 
 A card refresh applies only the requested account from the API's full

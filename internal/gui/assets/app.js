@@ -519,6 +519,7 @@ function renderAgents() {
     // own opens them in a sheet; the window's opened row holds them
     // (connectPanel)
     if (mode === "panel" && agentPrefsOf(a)) fields.append(agentPrefsButton(a));
+    omoCategoriesEntry(a, mode, fields, extras);
     if (extras.childNodes.length) fields.append(extras);
     // an app that takes magpie by a link of its own (Cindy) has nothing to
     // pick: its row opens the link, and the app asks to add magpie
@@ -2215,6 +2216,7 @@ function connectPanel(a, { fields, fieldBtn }) {
     // with (#1003)
     kv(t(a.id === "cursor-local" ? "Settings" : "New sessions"), line(fields));
   }
+  omoCategoriesDetails(a, kv);
   if (a.native) for (const [key, detail] of Object.entries(a.native.fields || {})) {
     if (detail.detail) { const f = a.fields.find((x) => x.key === key); kv(t(f?.label || key), line(t(detail.detail))); }
   }
@@ -3840,6 +3842,7 @@ function openAgentMenu(anchor, a, inFold) {
         { name: "Move down", icon: MOVE_DOWN, key: ALT + "↓", off: i < 0 || i >= shown.length - 1, run: () => moveAgent(a.id, i + 1) },
         // its own settings, as the square on its row opens them
         ...(agentPrefsOf(a) ? [{ name: t("{agent} settings", { agent: a.name }), literal: true, icon: PREFS_GLYPH, sep: true, run: () => openAgentPrefs(a) }] : []),
+        ...omoCategoriesMenu(a),
         // for a config rewritten in a way magpie can't see: set it again anyway
         ...(reapply ? [{ name: "Apply again", icon: REAPPLY, sep: true, run: () => reapplyAgent(a) }] : []),
         ...(a.drift?.kind === "replaced" ? [{ name: "Keep current settings", icon: CHECK, run: () => keepAgent(a) }] : []),
@@ -18202,6 +18205,7 @@ function closeConfirmAsk() {
   // Escape and the backdrop must not expose row actions while a bulk write
   // still holds an older full arrangement. Done is disabled for the same reason.
   if (agentsVisibilitySaving && confirmAsk.classList.contains("ag-manager")) return;
+  if (confirmAsk.beforeClose && !confirmAsk.beforeClose()) return;
   // one asked from an editor goes back to it rather than close it too
   const back = confirmAsk.back;
   confirmAsk = null;
@@ -18214,7 +18218,12 @@ $("#modal").addEventListener("click", (e) => {
   if (confirmAsk && modalBackdrop(e)) { e.stopImmediatePropagation(); closeConfirmAsk(); }
 }, true);
 document.addEventListener("keydown", (e) => {
-  if (!confirmationPending && confirmAsk && e.key === "Escape") { e.preventDefault(); e.stopImmediatePropagation(); closeConfirmAsk(); }
+  if (!confirmationPending && confirmAsk && e.key === "Escape") {
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    if (pick) closePicker();
+    else closeConfirmAsk();
+  }
 }, true);
 function resetOutcome(out) {
   switch (out.code) {
@@ -21211,7 +21220,6 @@ const AGENT_PREFS = {
   grok: ["fullContextRow"],
 };
 const agentPrefsOf = (a) => gatewayMode ? null : AGENT_PREFS[kindOf(a)];
-const PREFS_GLYPH = "M2.75 4.75h10.5M2.75 11.25h10.5M5.75 3.25v3M10.25 9.75v3";
 let agentPrefRowEls = null;
 // homeAgentPrefRows puts back the rows a sheet took with it when another
 // dialog replaced it, so every row is in the page to be drawn
