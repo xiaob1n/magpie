@@ -55,6 +55,11 @@ type Options struct {
 	Kinds map[string]bool
 	// Model, where set, finds more in the texts to mask (model.go)
 	Model Model
+	// Route names where a request masked for a vendor may go (the gateway
+	// sets it: the providers a model, its fallbacks or a routing group's
+	// members are served by). A text sent on it before goes on it again
+	// as it went (sentSpans); on another route it is masked afresh.
+	Route string
 	// MinScore is the score the user has Model's finds need (Settings →
 	// Privacy's slider), which Model's own finds are held to already. A
 	// value only the model found, masked before at a lower score, isn't
@@ -83,7 +88,8 @@ type Options struct {
 	// found are the spans Model found, by text, for one request's texts
 	found map[string][]Found
 	// sent is masking for a vendor (Mask, MaskJSON): a text masked
-	// before has the known values it had then (sentKnownSpans)
+	// before on Route has the model's finds and the known values it had
+	// then (sentSpans)
 	sent bool
 }
 
@@ -1030,10 +1036,15 @@ func mask(raw string, o Options, put func(kind, v string) string, escaped bool) 
 	}
 	// after the rules', so where a rule finds the same value it keeps the
 	// kind it has always had
-	found = append(found, modelSpans(raw, o)...) // the model was asked about raw
 	if o.sent {
-		found = append(found, sentKnownSpans(s, o)...)
+		// the model was asked about raw
+		now := modelSpans(raw, o)
+		kept := sentSpans(sentModel, raw, o, func() []span { return now })
+		learnLate(raw, now, kept, o, escaped)
+		found = append(found, kept...)
+		found = append(found, sentSpans(sentKnown, s, o, func() []span { return knownSpans(s, o) })...)
 	} else {
+		found = append(found, modelSpans(raw, o)...) // the model was asked about raw
 		found = append(found, knownSpans(s, o)...)
 	}
 	if escaped {
@@ -1044,6 +1055,33 @@ func mask(raw string, o Options, put func(kind, v string) string, escaped bool) 
 		noteScores(raw, found) // what is masked for a vendor, not a preview
 	}
 	return apply(raw, found, put, o)
+}
+
+// learnLate makes known what the model finds in raw now that it didn't
+// the first time raw was sent on o.Route (now, beside kept): raw goes as
+// it went, but a value in it the model has read since is masked in new
+// text, as it would be had raw been masked with it (known.go). Nothing
+// is told (o.Seen): it isn't masked here.
+func learnLate(raw string, now, kept []span, o Options, escaped bool) {
+	var late []span
+	for _, f := range now {
+		if !slices.ContainsFunc(kept, func(k span) bool { return k.start == f.start && k.end == f.end && k.kind == f.kind }) {
+			late = append(late, f)
+		}
+	}
+	if len(late) == 0 {
+		return
+	}
+	if escaped {
+		late = outsideEscapes(raw, late)
+	}
+	noteScores(raw, late)
+	o.Seen = nil
+	put := o.put()
+	if escaped {
+		put = unescapedPut(put)
+	}
+	apply(raw, late, put, o)
 }
 
 // unescapedView is s, JSON text, as long as s and read as the vendor reads

@@ -1454,7 +1454,7 @@ func (s *Server) countTokens(w http.ResponseWriter, r *http.Request) {
 	// and the one as written where generation sends that, masked only
 	// then (#3973)
 	if _, ms, isGroup := provider.FindGroup(id); !ok || !unredactedRoute(p, isGroup, ms) {
-		rw, b, done, hits, err := redactedHits(r.Context(), w, body)
+		rw, b, done, hits, err := redactedHits(maskedFor(r.Context(), p, isGroup, ms), w, body)
 		if err != nil {
 			writeError(w, provider.Anthropic, maskStatus(err), err.Error())
 			return
@@ -2038,7 +2038,7 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request, from provider.Pro
 	// are, and an observer that wants the bodies is handed a copy masked
 	// when it is first handed one, after the try (maskIn, #3973)
 	if sentWhole = unredactedRoute(p, isGroup, ms); !sentWhole {
-		rw, b, done, hits, err := redactedHits(r.Context(), capture.ResponseWriter, body)
+		rw, b, done, hits, err := redactedHits(maskedFor(r.Context(), p, isGroup, ms), capture.ResponseWriter, body)
 		if err != nil { // fails closed: never sent unmasked
 			log.Printf("gateway: %v", err)
 			call.Status, call.Error = maskStatus(err), err.Error()
@@ -2852,7 +2852,7 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request, from provider.Pro
 		// member fixed at an effort keeps its own
 		ruled := ""
 		if c.effort == "" {
-			if ruled = ruleEffort(c, hit, nested); ruled != "" {
+			if ruled = ruleEffort(c, hit, nested, ms); ruled != "" {
 				fixed = ""
 			}
 		}
@@ -3733,7 +3733,15 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request, from provider.Pro
 		// (a plain provider's: not ChatGPT's reset of a large request,
 		// which Codex is told at its 503 with what may help, as Codex's
 		// own one-account relay leaves it, codexBusy)
-		if _, same := passing(hw.code(), hw.header, hw.errBody(), again); last && patience > 0 && !protected && !hw.turnedAway && !hw.refused && hw.failed() && busy(hw.code(), hw.errBody()) &&
+		// The last one left out of its allowance, after a member before it
+		// failed in a way that passes, has those asked again as well, and
+		// rests as they did: the relay's moment of 503 had the agent told
+		// it, or the last one's 429, while the relay would answer a moment
+		// on (dbydd on Discord: an in-order group of sub2api relays, a
+		// Codex account out of its quota last)
+		lastSpent := last && isGroup && len(busyNow) > 0 && !hw.passing && hw.failed() && !busy(hw.code(), hw.errBody()) &&
+			slices.Contains([]string{failQuota, failCredit}, failure(hw.code(), hw.errBody()))
+		if _, same := passing(hw.code(), hw.header, hw.errBody(), again); last && patience > 0 && !protected && !hw.turnedAway && !hw.refused && hw.failed() && (busy(hw.code(), hw.errBody()) || lastSpent) &&
 			(isGroup || !codexReset(hw.code(), hw.errBody())) &&
 			(len(busyNow) > 0 || waitsOf(c.patience, patienceFallback) > 0 && !same) {
 			// every member has failed, each in a way that passes — busy,
@@ -3750,7 +3758,7 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request, from provider.Pro
 			if waitFrom.IsZero() {
 				waitFrom = time.Now()
 			}
-			if waitsOf(c.patience, patienceFallback) > 0 {
+			if waitsOf(c.patience, patienceFallback) > 0 && !lastSpent {
 				busyNow = noteBusy(busyNow, c, hw.header)
 			}
 			// nor once Codex would hang up in the pause, for want of an
@@ -3761,6 +3769,10 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request, from provider.Pro
 			}
 			if next, wait, ok := replan(busyNow, rounds, waitFrom, patienceFallback); ok && !kept.tooQuiet(wait) {
 				try.Fail, try.Again = failureOf(c, hw.code(), hw.errBody()), wait.Milliseconds()
+				if lastSpent {
+					rest := s.restAfterMarked(c, hw.code(), hw.header, hw.errBody(), hw.sharedPool)
+					try.Fail, try.Rest = rest.Why, &rest
+				}
 				if isGroup {
 					// a plain provider's is told as the last one left
 					// asked again: it has no members taking turns
@@ -3856,10 +3868,15 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request, from provider.Pro
 				continue
 			}
 		}
-		if last && !held && !hw.passing && hw.failed() && c.p.Account == nil && quotaStatus(hw.code()) && (try.Fail == failQuota || try.Fail == failCredit || failure(hw.code(), hw.errBody()) == failQuota || failure(hw.code(), hw.errBody()) == failCredit) {
+		if last && !held && !hw.passing && hw.failed() && quotaStatus(hw.code()) && (try.Fail == failQuota || try.Fail == failCredit || failure(hw.code(), hw.errBody()) == failQuota || failure(hw.code(), hw.errBody()) == failCredit) {
 			// the last key left is out of its allowance: it rests as the
 			// ones before it did, for the next request to be answered
-			// from the rests until the first of them is back (#1772)
+			// from the rests until the first of them is back (#1772). An
+			// account too: not resting, it stayed the one a relay's moment
+			// of failure went on to, and its 429 the agent's, request
+			// after request, while the relay before it would answer
+			// (dbydd on Discord). quotaHeld still holds keys alone, and
+			// autoReset lifts the rest of an account it spends a reset of
 			rest := s.restAfterMarked(c, hw.code(), hw.header, hw.errBody(), hw.sharedPool)
 			try.Fail, try.Rest = rest.Why, &rest
 		}

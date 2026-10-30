@@ -466,6 +466,12 @@ func magpieProviderJSONAt(shape, catalog, gw string) any {
 				e["reasoning"] = true
 			}
 			e["variants"] = openCodeVariants(m.Efforts, m.CodexFast)
+			// OpenCode counts a session's cost by it, in USD per million
+			// tokens (models.dev's cost; OpenCode 2.0.25 reads input,
+			// output, cache_read, cache_write), and counted 0 without it
+			if p := m.Price; p != nil {
+				e["cost"] = map[string]any{"input": p.Input, "output": p.Output, "cache_read": p.CacheRead, "cache_write": p.CacheWrite}
+			}
 			ms[m.ID] = e
 		}
 		return map[string]any{"npm": "@ai-sdk/openai-compatible", "name": "magpie",
@@ -485,8 +491,15 @@ func magpieProviderJSONAt(shape, catalog, gw string) any {
 			if tokens == 0 {
 				tokens = 16384
 			}
-			ms = append(ms, map[string]any{"id": m.ID, "name": m.Name, "context_window": window, "default_max_tokens": tokens,
-				"can_reason": len(m.Efforts) > 0})
+			cm := map[string]any{"id": m.ID, "name": m.Name, "context_window": window, "default_max_tokens": tokens,
+				"can_reason": len(m.Efforts) > 0}
+			// Crush counts a session's cost by it (catwalk's cost_per_1m_*,
+			// Crush 0.39.3): in_cached is a cache write, out_cached a read
+			if p := m.Price; p != nil {
+				cm["cost_per_1m_in"], cm["cost_per_1m_out"] = p.Input, p.Output
+				cm["cost_per_1m_in_cached"], cm["cost_per_1m_out_cached"] = p.CacheWrite, p.CacheRead
+			}
+			ms = append(ms, cm)
 		}
 		if ms == nil {
 			ms = []map[string]any{}

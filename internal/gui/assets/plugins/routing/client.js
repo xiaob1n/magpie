@@ -2568,6 +2568,10 @@ function routingPage(part) {
       else if (w.speaks) s = t("{api} only", { api: API[w.speaks] || w.speaks });
       else s = w.kind === "key" ? t("API key") : t("one key");
       if (row.st.textContent !== s) row.st.textContent = s;
+      // the intent is the user's own words, of any length: cut short on
+      // the row (routing.css), read whole over it
+      const full = said && s.includes(said) ? s : "";
+      if (row.st.title !== full) { if (full) row.st.title = full; else row.st.removeAttribute("title"); } // an empty title would hide the row's own
       // an account's windows each, with when they reset, in its tooltip
       // (#1835): the row says the fullest one while idle and what it is
       // doing while it answers, and a second line on every seat would
@@ -4441,7 +4445,10 @@ function routingPage(part) {
       return pointAt(l.p, l.rev ? lens[i] - d : d);
     };
     if (!total) return;
-    const d = e * total, pt = point(d);
+    // every wire ends at a card, and the sky is under the cards: a flight
+    // starts and ends a dot clear of them, so a dot held at its seat or
+    // waiting at magpie is seen whole
+    const edge = Math.min(6, total / 4), d = edge + e * (total - 2 * edge), pt = point(d);
     setAttr(tr.dot, "cx", String(pt.x));
     setAttr(tr.dot, "cy", String(pt.y));
     tr.dot.removeAttribute("visibility");

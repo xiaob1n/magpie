@@ -39,6 +39,10 @@ type Skill struct {
 	// Commit is the commit of the repository it was fetched at.
 	Hash   string `json:"hash,omitempty"`
 	Commit string `json:"commit,omitempty"`
+	// Own is Hash leaving aside what installing the skill's dependencies
+	// writes (ownHash): set as it is fetched, so a lock file the install
+	// writes again isn't taken for a change of the user's
+	Own string `json:"own,omitempty"`
 	// From is the repository one not installed from GitHub was found to
 	// come from (skill_from.go), only to group it with the rest of it
 	From string `json:"from,omitempty"`
@@ -1339,10 +1343,10 @@ func installFrom(l *Library, p *Probe, paths, agents []string, shown bool, in *i
 		}
 		sk := &Skill{Name: c.Name, Source: &src, Agents: slices.Clone(agents)}
 		if src.Kind == "git" {
-			sk.Hash, sk.Commit = hashDir(dir), gitHeadOf(p.root)
+			sk.Hash, sk.Own, sk.Commit = hashDir(dir), ownHash(dir), gitHeadOf(p.root)
 		}
 		if src.Kind == "github" {
-			sk.Hash = hashDir(dir)
+			sk.Hash, sk.Own = hashDir(dir), ownHash(dir)
 			// every skill the picker showed was offered: a check
 			// offers only those the repository adds later
 			l.seenAt(src.Repo, src.Ref, c.Path)
@@ -1648,7 +1652,7 @@ func (up *skillUpdate) apply(l *Library, targets []*Target) error {
 		os.RemoveAll(next)
 		return err
 	}
-	hash := hashDir(next)
+	hash, own := hashDir(next), ownHash(next)
 	if fi, err := os.Lstat(skillDir(name)); err == nil && linkEntry(fi) {
 		// a link to CC Switch's folder: only the link goes
 		if err := os.Remove(skillDir(name)); err != nil {
@@ -1672,13 +1676,15 @@ func (up *skillUpdate) apply(l *Library, targets []*Target) error {
 		}
 		// the commit it's at is known again once a check finds the files
 		// GitHub has to be these; a git repository's is the one fetched
-		s.Hash, s.Commit = hash, up.commit
+		s.Hash, s.Own, s.Commit = hash, own, up.commit
 		s.Gone = "" // its source has it again
 	}
 	forgetCheck(name)
 	if old == "" {
 		return nil
 	}
+	// its installed dependencies go on with it
+	carryInstalled(old, skillDir(name))
 	if keep {
 		var lb *leftBehind
 		if _, err := keepReplaced(name, old); err != nil && !errors.As(err, &lb) {

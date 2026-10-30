@@ -70,18 +70,25 @@ type packedRow struct {
 	Time time.Time
 	// Varied are the strings of rowVaried, and Shape the chunk's Shapes
 	// entry that holds the row's other strings
-	Varied                         [len(rowVaried)]uint32
-	Shape                          uint32
-	Tokens                         [6]int64
-	Millis, TTFT, FirstText, Order int64
-	Sent, Flow, FirstReasoning     int64
-	Own, Retried, Queued           int64
-	RouteID                        int64
-	Cost, Credits                  float64
-	Status, Tries                  int32
-	Masking                        int32 // ms (Record.Masking)
-	Flags                          uint16
+	Varied         [len(rowVaried)]uint32
+	Shape          uint32
+	Tokens         [6]int64
+	Order, RouteID int64
+	Cost, Credits  float64
+	// the times of the call, in ms as in Record, kept in 32 bits (msOf):
+	// a page holds every row of its period, and they were 36 of a row's
+	// 216 bytes as int64s (#2278)
+	Millis, TTFT, FirstText    int32
+	Sent, Flow, FirstReasoning int32
+	Own, Retried, Queued       int32
+	Masking                    int32 // ms (Record.Masking)
+	Status, Tries              int32
+	Flags                      uint16
 }
+
+// msOf is a time in ms as a packedRow keeps it: one past 24 days, which
+// no call takes, is kept as the longest it can be.
+func msOf(ms int64) int32 { return int32(max(min(ms, math.MaxInt32), math.MinInt32)) }
 
 // rowHandedOn is the Flags bit of Record.HandedOn, rowReasoningHidden
 // Record.ReasoningHidden's: 64 is block_price.go's swapKnown, 256
@@ -231,7 +238,7 @@ func (c *rowChunk) add(r Row, msg string, order int64, failed bool) {
 		c.Bytes += int64(len(s) + 48)
 		return id
 	}
-	p := packedRow{Time: r.Time, Tokens: [6]int64{int64(r.Input), int64(r.Output), int64(r.CacheRead), int64(r.CacheWrite), int64(r.Reasoning), int64(r.CacheWrite1h)}, Millis: r.Millis, TTFT: r.TTFT, FirstText: r.FirstText, FirstReasoning: r.FirstReasoning, Sent: r.Sent, Flow: r.Flow, Own: r.Own, Masking: int32(min(r.Masking, math.MaxInt32)), Retried: r.Retried, Queued: r.Queued, Order: order, RouteID: r.RouteID, Cost: r.Cost, Status: int32(r.Status), Tries: int32(r.Tries)}
+	p := packedRow{Time: r.Time, Tokens: [6]int64{int64(r.Input), int64(r.Output), int64(r.CacheRead), int64(r.CacheWrite), int64(r.Reasoning), int64(r.CacheWrite1h)}, Millis: msOf(r.Millis), TTFT: msOf(r.TTFT), FirstText: msOf(r.FirstText), FirstReasoning: msOf(r.FirstReasoning), Sent: msOf(r.Sent), Flow: msOf(r.Flow), Own: msOf(r.Own), Masking: int32(min(r.Masking, math.MaxInt32)), Retried: msOf(r.Retried), Queued: msOf(r.Queued), Order: order, RouteID: r.RouteID, Cost: r.Cost, Status: int32(r.Status), Tries: int32(r.Tries)}
 	var t [rowTexts]uint32
 	for i, s := range rowText(&r) {
 		t[i] = intern(*s)
@@ -296,7 +303,7 @@ func (c *rowChunk) add(r Row, msg string, order int64, failed bool) {
 }
 func (c *rowChunk) row(i int) Row {
 	p := &c.Rows[i]
-	r := Row{Record: Record{RouteID: p.RouteID, Time: p.Time, Input: int(p.Tokens[0]), Output: int(p.Tokens[1]), CacheRead: int(p.Tokens[2]), CacheWrite: int(p.Tokens[3]), CacheWrite1h: int(p.Tokens[5]), Reasoning: int(p.Tokens[4]), Millis: p.Millis, TTFT: p.TTFT, FirstText: p.FirstText, FirstReasoning: p.FirstReasoning, ReasoningHidden: p.Flags&rowReasoningHidden != 0, CacheUnknown: p.Flags&rowCacheUnknown != 0, Sent: p.Sent, Flow: p.Flow, Own: p.Own, Masking: int64(p.Masking), Retried: p.Retried, Queued: p.Queued, Status: int(p.Status), Tries: int(p.Tries), HandedOn: p.Flags&rowHandedOn != 0, Rejected: p.Flags&4 != 0, SessionOfficialLogin: p.Flags&8 != 0}, Cost: p.Cost, Priced: p.Flags&1 != 0, Swapped: p.Flags&2 != 0, Routed: p.Flags&32 != 0}
+	r := Row{Record: Record{RouteID: p.RouteID, Time: p.Time, Input: int(p.Tokens[0]), Output: int(p.Tokens[1]), CacheRead: int(p.Tokens[2]), CacheWrite: int(p.Tokens[3]), CacheWrite1h: int(p.Tokens[5]), Reasoning: int(p.Tokens[4]), Millis: int64(p.Millis), TTFT: int64(p.TTFT), FirstText: int64(p.FirstText), FirstReasoning: int64(p.FirstReasoning), ReasoningHidden: p.Flags&rowReasoningHidden != 0, CacheUnknown: p.Flags&rowCacheUnknown != 0, Sent: int64(p.Sent), Flow: int64(p.Flow), Own: int64(p.Own), Masking: int64(p.Masking), Retried: int64(p.Retried), Queued: int64(p.Queued), Status: int(p.Status), Tries: int(p.Tries), HandedOn: p.Flags&rowHandedOn != 0, Rejected: p.Flags&4 != 0, SessionOfficialLogin: p.Flags&8 != 0}, Cost: p.Cost, Priced: p.Flags&1 != 0, Swapped: p.Flags&2 != 0, Routed: p.Flags&32 != 0}
 	if p.Flags&rowCredits != 0 {
 		credits := p.Credits
 		r.Credits = &credits
@@ -1423,7 +1430,8 @@ type matchCandidate struct {
 // and growing these afresh each time was ~1.9 of the ~2.2 GB the matcher
 // allocated in 80 s of polls (#2278). A sync.Pool kept nothing: a poll
 // collects several times a second, and each collection empties it. One is
-// kept until ReleaseScratch, which the window calls once its reads rest.
+// kept until ReleaseScratch, which the window calls once its reads rest,
+// or until no pairing has used it for scratchLinger.
 type matchScratch struct {
 	reserved   map[rowRef]bool
 	byID       map[string]int32
@@ -1469,6 +1477,34 @@ func ReleaseScratch() {
 	releasePriced()
 }
 
+// scratchLinger is how long the matcher's scratch is kept once the last
+// pairing put it back. While an agent works every poll pairs again and
+// finds it kept; with nothing new to pair, a poll is answered from the
+// pairings kept (pairMemo) and pairs nothing, and the scratch of one pairing
+// of the whole history sat unused while the window polled: ~120 MB of the
+// ~270 MB held over 60 s of polls on a 65 GB history (#2278).
+var scratchLinger = 30 * time.Second
+
+var scratchSweep struct {
+	sync.Mutex
+	t *time.Timer
+}
+
+// lingerScratch has the kept scratch let go scratchLinger after the last
+// pairing put it back.
+func lingerScratch() {
+	scratchSweep.Lock()
+	defer scratchSweep.Unlock()
+	if scratchSweep.t == nil {
+		scratchSweep.t = time.AfterFunc(scratchLinger, func() {
+			keptMatch.Store(nil)
+			keptPicks.Store(nil)
+		})
+		return
+	}
+	scratchSweep.t.Reset(scratchLinger)
+}
+
 // sized is s[:n], zeroed, in s's array when it holds n
 func sized[T any](s []T, n int) []T {
 	if cap(s) < n {
@@ -1495,6 +1531,7 @@ func (s *matchScratch) release() {
 	s.calls, s.found, s.refs, s.groups, s.ks = s.calls[:0], s.found[:0], s.refs[:0], s.groups[:0], s.ks[:0]
 	s.ends, s.counts, s.unique, s.candidates = s.ends[:0], s.counts[:0], s.unique[:0], s.candidates[:0]
 	keptMatch.Store(s)
+	lingerScratch()
 }
 
 // agyMatchSession stands for the session of an Antigravity CLI (agy) call

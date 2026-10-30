@@ -226,6 +226,10 @@ func nativeIDsWith(agents map[string]bool, all []file, quick bool) map[string]ma
 		id := sessionID(fs)
 		if a := fs[0].agent; agents[a] {
 			out[a][id] = true
+			// its subagents' calls are counted in it (subIDs)
+			for _, sub := range subIDs(fs, id) {
+				out[a][sub] = true
+			}
 		}
 		if fs[0].agent == "raft" && agents["pi"] {
 			out["pi"][id] = true

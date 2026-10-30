@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -331,6 +332,136 @@ func TestDeepSeekSearchAPI(t *testing.T) {
 		}
 	}
 	if v, ok := provider.SearchVendorOf("deepseek"); !ok || v.Base != "https://api.deepseek.com" || v.KeyOptional {
+		t.Errorf("vendor %+v", v)
+	}
+}
+
+// TestVolcengineSearchAPI: Doubao Search Custom (Volcengine) answers
+// from its docs' own example reply (volcengine.com/docs/87772/2272953),
+// asked as its docs say, its errors read by their code (CyberCaius on
+// Discord).
+func TestVolcengineSearchAPI(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	reply, err := os.ReadFile("testdata/volcengine_web_search.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// its docs' error example, its "// 该字段为错误码" note taken out
+	errReply := func(code int, msg string) string {
+		return `{
+    "ResponseMetadata": {
+        "RequestId": "202505231206578F7BD0BCD73AF8703C1E",
+        "Action": "WebSearch",
+        "Version": "2025-01-01",
+        "Service": "volc_torchlight_api",
+        "Region": "cn-beijing",
+        "Error": {
+            "CodeN": ` + strconv.Itoa(code) + `,
+            "Code": "` + strconv.Itoa(code) + `",
+            "Message": "` + msg + `"
+        }
+    },
+    "Result": null
+}`
+	}
+	var mu sync.Mutex
+	var got []map[string]any
+	var paths, auths []string
+	answer := func(w http.ResponseWriter) { w.Write(reply) }
+	f := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		var body map[string]any
+		json.Unmarshal(b, &body)
+		mu.Lock()
+		got = append(got, body)
+		paths = append(paths, r.Method+" "+r.URL.Path+" "+r.Header.Get("Content-Type"))
+		auths = append(auths, r.Header.Get("Authorization"))
+		a := answer
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		a(w)
+	}))
+	t.Cleanup(f.Close)
+	s := New()
+	a := provider.SearchAPI{Vendor: "volcengine", Key: "volc-key-123456", URL: f.URL}
+	long := strings.Repeat("搜", 150)
+	for _, q := range []string{"北京最新游玩攻略", long} {
+		pages, err := s.askSearchAPI(context.Background(), a, q)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(pages) != 2 || pages[0].URL != "https://c.m.163.com/news/a/L4U501RM0556LJ9Q.html" ||
+			pages[0].Title != "2026北京5日游超全攻略｜行前预约、交通住宿、经典路线、避坑指南一站式拆解" ||
+			!strings.HasPrefix(pages[0].Text, "2026北京5日游超全攻略｜行前预约、交通住宿、经典路线、避坑指南一站式拆解 北京旅游——行前准备") ||
+			!strings.Contains(pages[0].Text, "高铁（首选）") || // its Summary, not its Snippet
+			strings.Contains(pages[0].Text, "旅游定制小团 2026-08-22") || // nor its Content
+			pages[0].Age != "2026-08-22T09:16:00+08:00" ||
+			pages[1].URL != "https://www.cnblogs.com/chun-wan-lv/p/22651954" || pages[1].Age != "2026-08-24T11:37:00+08:00" {
+			t.Fatalf("pages %+v", pages)
+		}
+		if len(pages[0].Text) > pageText+len("…") {
+			t.Fatalf("text of %d bytes", len(pages[0].Text))
+		}
+	}
+	if paths[0] != "POST /search_api/web_search application/json" || auths[0] != "Bearer volc-key-123456" {
+		t.Fatalf("asked %q with %q", paths[0], auths[0])
+	}
+	b, _ := json.Marshal(got[0])
+	if string(b) != `{"Count":6,"Filter":{"NeedUrl":true},"Query":"北京最新游玩攻略","SearchType":"web"}` {
+		t.Fatalf("body %s", b)
+	}
+	if q, _ := got[1]["Query"].(string); q != strings.Repeat("搜", volcQueryMax) {
+		t.Fatalf("a long query went as %d characters", len([]rune(q)))
+	}
+
+	// a page with no URL is left out, and a 1970 time is none
+	mu.Lock()
+	answer = func(w http.ResponseWriter) {
+		io.WriteString(w, `{"ResponseMetadata":{"RequestId":"r"},"Result":{"ResultCount":2,"WebResults":[`+
+			`{"Id":"a","SortId":1,"Title":"天气","SiteName":"火山如意","Url":"","Snippet":"晴"},`+
+			`{"Id":"b","SortId":2,"Title":"<em>Go</em> 下载","Url":"https://go.dev/dl/","Snippet":"Download Go.","Summary":"","PublishTime":"1970-01-01T08:00:00+08:00"}]}}`)
+	}
+	mu.Unlock()
+	pages, err := s.askSearchAPI(context.Background(), a, "go")
+	if err != nil || len(pages) != 1 || pages[0].Title != "Go 下载" || pages[0].Text != "Download Go." || pages[0].Age != "" {
+		t.Fatalf("pages %+v, %v", pages, err)
+	}
+
+	// an error comes in ResponseMetadata.Error, with a 200 or a status
+	for _, c := range []struct {
+		status, code, want int
+		why                string
+	}{
+		{200, 10403, 403, "turned away"},
+		{401, 10401, 403, "turned away"},
+		{200, 10406, 402, "out of credit"},
+		{200, 10412, 402, "out of credit"},
+		{429, 700429, 429, "rate limited"},
+		{200, 700429, 429, "rate limited"},
+		{200, 10400, 0, ""},
+		{500, 10500, 0, ""},
+	} {
+		mu.Lock()
+		answer = func(w http.ResponseWriter) {
+			w.WriteHeader(c.status)
+			io.WriteString(w, errReply(c.code, "volc-key-123456 query or search type is empty"))
+		}
+		mu.Unlock()
+		_, err := s.askSearchAPI(context.Background(), a, "q")
+		if err == nil || !strings.Contains(err.Error(), strconv.Itoa(c.code)+" ") || strings.Contains(err.Error(), "volc-key-123456") {
+			t.Fatalf("%d %d: %v", c.status, c.code, err)
+		}
+		var r searchRefused
+		if refused := errors.As(err, &r); refused != (c.want != 0) || refused && r.status != c.want {
+			t.Fatalf("%d %d: %#v", c.status, c.code, err)
+		}
+		if c.want != 0 {
+			if _, why := searchRestFor("volcengine", r.status, "", time.Now()); why != c.why {
+				t.Errorf("%d rests as %q", c.code, why)
+			}
+		}
+	}
+	if v, ok := provider.SearchVendorOf("volcengine"); !ok || v.Base != "https://open.feedcoopapi.com" || v.KeyOptional {
 		t.Errorf("vendor %+v", v)
 	}
 }

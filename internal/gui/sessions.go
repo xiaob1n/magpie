@@ -108,12 +108,9 @@ func sessionRoutes(mux *http.ServeMux, w Windows) {
 		list := sessions.List(sessions.All)
 		nativeKeys := make(map[string]bool, len(list))
 		for _, s := range list {
+			// its copies' and subagents' ids among them
 			for _, k := range sessions.GatewayKeys(s) {
 				nativeKeys[k] = true
-			}
-			// a copy of its conversation is the agent's own too
-			for _, id := range s.Copies {
-				nativeKeys[s.Agent+"|"+id] = true
 			}
 		}
 		gateway := listedGateway(usage.GatewaySessions(time.Time{}, nativeKeys))

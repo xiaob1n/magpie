@@ -1915,10 +1915,8 @@ async function addProviderFromAgents() {
   if (!adding) $("#addProvider")?.click();
 }
 
-// desktopLongestLine: Claude Desktop lists a model of 1M or more twice, the
-// plain one and a "1M context window" one of its own; switched on, magpie
-// lists it by its 1M id alone, one entry each (#1272). Desktop reads the
-// list as it starts.
+// desktopLongestLine: Desktop lists a 1M model twice; on, magpie lists its
+// 1M id alone (#1272)
 function desktopLongestLine() {
   const on = !!state.settings?.desktopLongest;
   const l = el("label", "ag-vl ag-longest");
@@ -2121,7 +2119,10 @@ function connectPanel(a, { fields, fieldBtn }) {
     }
     kv(t("In {agent}", { agent: a.name }), ...parts);
   } else if (menuFromList(a)) {
-    kv(t("In {agent}", { agent: a.name }), line(t("{agent}'s model menu lists the models picked here; switch among them there. It reads the list as it starts: quit and reopen it after a change.", { agent: a.name })));
+    const p = [line(t("{agent}'s model menu lists the models picked here; switch among them there. It reads the list as it starts: quit and reopen it after a change.", { agent: a.name }))];
+    // its 3p window has no Chinese (GZXYMH on X)
+    if (a.id === "claude-desktop" && /^zh/.test(locale)) p.push(el("div", "ag-vl ag-warn ag-desktop-lang")), p[1].append(el("span", "ag-dot"), el("span", "", t("On magpie, Desktop shows Anthropic's gateway window, which has no Chinese; disconnect it for Chinese.")));
+    kv(t("In {agent}", { agent: a.name }), ...p);
   }
   // Hermes' other profiles, each on its own model
   const bots = a.fields.filter(hermesBot);
@@ -2410,11 +2411,9 @@ async function reapplyAgent(a, btn) {
 }
 
 // ---------- the agents' CLIs (#202) ----------
-// Each agent's CLI shows its version after its name, faint; when a newer one
-// is out and magpie knows how the CLI was installed (its own updater, npm,
-// bun, pnpm, Homebrew), a pill beside it updates it. The versions come after
-// the rows are drawn, never holding them up; one magpie can't tell how it
-// was installed shows its version alone.
+// Each agent's CLI shows its version after its name; a newer one out and its
+// installer known (its updater, npm, bun, pnpm, Homebrew), a pill updates
+// it. The versions come after the rows are drawn, never holding them up.
 
 let cliInfo = {}; // agent id → { version, latest, via, command, update }
 const cliBusy = new Set(); // the ones being updated now
@@ -2780,10 +2779,8 @@ let panelOpenAgent = null; // the one agent row the panel has opened
 // How the agent's own model is run (ultracode, an effort) is not: turning
 // Claude Code's ultracode on folded every other agent away under Show more.
 // One with 「接入」's switch is set up when it is connected, and only then
-// (#726): its fields are read from its own files, so one not connected kept
-// its row up for a model of its own (Antigravity, DeepSeek Harness), and a
-// connected Codex starting on its last choice, no model set, went under
-// Not set up. One magpie connected that has come apart (drift) stays up
+// (#726): its fields are read from its own files. One magpie connected
+// that has come apart (drift) stays up
 // too, to be put right. One with no switch (Cursor, an app's own models)
 // goes by what is set on it, as before, though while an agent can be
 // connected it doesn't start the folding (arrangeAgents): its values are
@@ -5442,13 +5439,11 @@ function rateTag(rate = 0, was = 0) {
 }
 
 // modelTells: what tells apart the models of one list that would show the
-// same label (sunset on Discord: the Our Free Model plugin's several
-// "DeepSeek-V4.1-Flash · x0.1", told apart only by the buddy/… of their
-// ids, in the tooltip). items are the list's entries, label(x) what each
-// shows, id(x) its id, and key(x) the part of the list it is shown in (a
-// picker's provider): labels are compared within a key. Returns a Map of
-// id → tell for the entries whose label another of the same key shares; an
-// entry whose label is its own gets none, and is drawn as it was.
+// same label (sunset on Discord). items are the list's entries, label(x)
+// what each shows, id(x) its id, and key(x) the part of the list it is
+// shown in (a picker's provider): labels are compared within a key.
+// Returns a Map of id → tell for the entries whose label another of the
+// same key shares; one whose label is its own gets none.
 //
 // A tell is the part of its id the others' don't share: the path segments
 // every id of the label begins with and ends with are dropped, so buddy/x
@@ -8792,22 +8787,15 @@ $("#modal").addEventListener("keydown", (e) => {
   e.preventDefault();
   (e.shiftKey ? last : first).focus();
 });
-// A dialog opens centred, and stays centred while what it holds fills in
-// before the reader has done anything in it (a plugin's README loading
-// under a dialog opened short read as a dialog sat low, the owner 10-24).
-// From the reader's first press or key in it, it stays put while what it
-// holds grows or shrinks (a fold opening, an error line, a list filling): it holds the
-// place of whatever the reader last pressed or focused in it, and grows
-// and shrinks round that, down to the window's foot, where it stays and
-// its fields scroll as a full-height dialog's do. Where there is no
-// room left to move, its fields shorten over a pressed button below them,
-// so an error line over Remove doesn't push Remove down; a pressed field
-// goes with what grows above it, as nothing a click does scrolls. Centred all along, a dialog
-// shorter than the window moved by half of every change, the line just
-// clicked sliding from under the pointer. Its place is a relative top and
-// a cap on its height. A change made in the page is held before it is
-// drawn (a mutation's microtask); one that only resizes (an animation, the
-// window) a frame later, as an observer can't resize what it observes.
+// A dialog opens centred and stays centred while it fills in, until the
+// reader's first press or key in it (the owner 10-24). From then it holds
+// the place of what the reader last pressed or focused, growing and
+// shrinking round it down to the window's foot, where its fields scroll.
+// With no room left, its fields shorten over a pressed button below them,
+// so an error line over Remove doesn't push Remove down. Centred all along,
+// the line just clicked slid from under the pointer. Its place is a
+// relative top and a cap on its height. A change made in the page is held
+// before it is drawn (a mutation's microtask); a resize a frame later.
 const modalHold = { off: 0, at: null, y: 0, cap: null, capSet: "", touched: false };
 // how far down the dialog an element sits, to the fraction of a pixel,
 // what moves it in an animation (a row coming in) left out. An element
@@ -9045,11 +9033,7 @@ $("#modal").onclick = (e) => { if (modalBackdrop(e)) cancelEdit(); };
 // is another (a save refused puts one back), and otherwise is left as it
 // is. A thumb is placed only where the control is laid out: one drawn
 // hidden (Settings at start, a tab not shown) is put under its option,
-// still, when it is shown or sized again (thumbFit). Before, a redrawn
-// control made a new thumb and replayed what was remembered of the old
-// one's glide from its start (a click's thumb jumped back and slid again),
-// and positions taken while Settings was hidden, 0 wide, made every thumb
-// on the page grow in from the left on the first save.
+// still, when it is shown or sized again (thumbFit).
 const thumbs = new Map(); // control position → { th, pick, to }: its thumb, the option it is under or going to, and where that is
 const THUMB_MS = 280, THUMB_EASE = "cubic-bezier(.2, .8, .2, 1)"; // --ease
 const thumbKeys = new WeakMap(); // box → its key, for thumbFit
@@ -9479,7 +9463,7 @@ function drawEditor(p, presetID) {
     if (subOf(a.agent)) {
       // no Claude Code on Windows: the gateway runs the one in WSL
       const via = a.wsl ? t("Runs through WSL · {distro}: Claude Code there signs in and answers; Windows has none of its own.", { distro: a.wsl }) + " " : "";
-      ed.append(...field(t("Accounts"), renderAccounts(a, p), via + (p.routing ? t("Tick every account to use; Routing says how requests spread over them.") : subOf(a.agent).single ? t("{agent} keeps one account; the gateway runs it for every request. Signing in to another replaces it.", { agent: a.agentName }) : subOf(a.agent).own && (a.logins || []).some((l) => l.own) ? t("The gateway uses the first. Tick more and it moves on to the next when the one before it is out of quota. {agent} itself stays signed in as it is.", { agent: a.agentName && a.agentName !== a.agent ? a.agentName : p.name }) : subOf(a.agent).own || subOf(a.agent).plugin ? t("The gateway uses the first. Tick more and it moves on to the next when the one before it is out of quota.") : t("{agent} signs in to the first. Tick more and the gateway moves on to the next when the one before it is out of quota. Sessions already running keep theirs until restarted.", { agent: a.agentName }))));
+      ed.append(...field(t("Accounts"), renderAccounts(a, p), via + (p.routing ? t("Tick every account to use; Routing says how requests spread over them.") : subOf(a.agent).single ? t("{agent} keeps one account; the gateway runs it for every request. Signing in to another replaces it.", { agent: a.agentName }) : subOf(a.agent).own && (a.logins || []).some((l) => l.own) ? t("The gateway uses the first. Tick more and it moves on to the next when the one before it is out of quota. {agent} itself stays signed in as it is.", { agent: a.agentName && a.agentName !== a.agent ? a.agentName : p.name }) : subOf(a.agent).own || subOf(a.agent).plugin ? t("The gateway uses the first. Tick more and it moves on to the next when the one before it is out of quota.") : t("{agent} signs in to the first. Tick more and magpie moves on to the next when the one before it is out of quota. Sessions already running keep theirs until restarted.", { agent: a.agentName }))));
       if ((a.logins || []).filter((l) => l.active || l.on).length > 1) ed.append(...renderRouting(p));
       if (p.move) ed.append(...renderMove(p));
     } else {
@@ -10847,7 +10831,7 @@ function showRest(n, open) {
 const DETECT_MAX = 30;
 // addFormModels: the add form's models, typed in (ex) or picked from the
 // vendor's list, asked with the form as it stands before anything is saved
-// (#578: 添加供应商的时候，希望添加可以获取全模型的按钮或者下拉框). A chip
+// (#578). A chip
 // ticked or unticked is in draft.extra, which the Save sends as the models.
 function addFormModels(ex) {
   const box = el("div", "stack add-models");
@@ -12065,7 +12049,7 @@ function renderRouting(p) {
   const own = (routing) => !a || (a.agent !== "codex" && a.agent !== "claude") ? ""
     : " " + (keptLogin(p)
       ? t("Routing picks the account for each request through magpie, in the accounts' order; {agent} on its own stays signed in to {user}, whatever it has left.", { agent: a.agentName, user: keptLogin(p) })
-      : p.keepLogin
+      : p.keepLogin && !p.switchOnly
       ? t("Routing picks the account for each request through magpie; {agent} on its own stays signed in to the first account, whatever it has left.", { agent: a.agentName })
       : routing === "order"
         ? t("Routing picks the account for each request through magpie; {agent} on its own uses the one it is signed in to, which magpie moves to the next ticked account with room once it is used up, and back to the first once that has room again.", { agent: a.agentName })
@@ -13179,11 +13163,10 @@ function forgetOwnTitle(a) {
 }
 
 // keptLogin: the account Codex or Claude Code is kept signed in to in
-// place of the first (#524), "" when none — the gateway then tries the
-// accounts in their order, the one signed in to at its own place
+// place of the first (#524), "" when none or switch-only (#1907)
 function keptLogin(p) {
   const a = p?.account;
-  if (!a || (a.agent !== "codex" && a.agent !== "claude") || !p.keepLogin || !p.keepLoginAs) return "";
+  if (!a || (a.agent !== "codex" && a.agent !== "claude") || !p.keepLogin || p.switchOnly || !p.keepLoginAs) return "";
   const as = p.keepLoginAs.toLowerCase();
   return (a.logins || []).find((l) => (l.user || "").toLowerCase() === as)?.user || "";
 }
@@ -13372,7 +13355,7 @@ function renderAccounts(a, p) {
   // first runs low (#209, #408); this keeps it on the first instead, or on
   // an account of the user's choosing, the gateway still spreading requests
   // over the ticked ones in their order (#524)
-  if ((a.agent === "codex" || a.agent === "claude") && several && p) {
+  if ((a.agent === "codex" || a.agent === "claude") && several && p && !p.switchOnly) {
     const box = el("div", "keep-login");
     const [keep, cb] = tick(t("Keep {agent} signed in to", { agent: a.agentName }), !!p.keepLogin);
     keep.title = t("magpie won't sign {agent} in to another account when the first runs low; requests through magpie still go to the other ticked accounts as Routing says", { agent: a.agentName });
@@ -13451,10 +13434,8 @@ function renderAccounts(a, p) {
   return list;
 }
 
-// renderCodexDaemon: Codex's background app-server read the sign-in when it
-// started, so after a switch the Codex sessions that attach to it are still
-// on the account before (user) until it restarts. magpie doesn't restart it
-// unasked: that ends the Codex sessions running on it.
+// renderCodexDaemon: Codex's background app-server, on the account before a
+// switch (user); a restart ends its sessions, so only on a press
 function renderCodexDaemon(user) {
   const box = codexNote("", t("Codex's background service is still signed in as {user}", { user }),
     t("Restart it to use the new account. Running Codex sessions will be interrupted."));
@@ -13467,16 +13448,20 @@ function renderCodexDaemon(user) {
   return box;
 }
 
-// renderCodexApp: the Codex desktop app reads the sign-in only when it
-// opens, so after a switch it stays on the account before (user): it shows
-// that account's limits and, once they are spent, sends in no thread. Only
-// quitting and opening it again moves it; magpie doesn't quit it unasked.
+// renderCodexApp: the Codex app, on the account before a switch (user) till
+// its app-server restarts; Restart does it now, asked first (nb5p_hQ on X)
 function renderCodexApp(user) {
   const box = codexNote("", t("The Codex app is still signed in as {user}", { user }),
     t("It shows that account's usage limits until it is quit and opened again. Quit it and open it again to use the new account."));
   const ok = el("button", "text", t("Got it"));
   ok.onclick = () => accountAction("codex/daemon/dismiss-app", {});
-  box.append(ok);
+  const go = el("button", "text primary", t("Restart"));
+  go.onclick = async () => {
+    if (!(await confirmRestart(t("The Codex app"), t("Its app-server restarts and signs in to the new account; its window stays. A running turn stops.")))) return;
+    go.classList.add("busy");
+    accountAction("codex/daemon/restart-app", {}, t("Codex app-server restarted"), true, tNotice);
+  };
+  box.append(ok, go);
   return box;
 }
 
@@ -13661,18 +13646,10 @@ function quotaError(err, q) {
   // it with (accessKeyCard, #1821): the card used to be left out unsaid
   if (/^this plan's usage is read with the account's access key: give its SecretId/.test(err)) return t("This plan's usage needs the account's SecretId and SecretKey — give them in the provider's settings");
   if (/^this plan's usage is read with the account's access key/.test(err)) return t("This plan's usage needs the account's AccessKey ID and Secret — give them in the provider's settings");
-  // ZCode with no GLM Coding Plan and no Start Plan left: the account has
-  // nothing to spend, which is not a reading that failed (#1001). Both the
-  // built-in (zcodeStartQuota, internal/provider/zcode_start.go) and the
-  // plugin (NO_START, packages/zcode) put these words on the card — the
-  // same string, byte for byte — and neither names a way out: the
-  // "subscribe at …" wording is in the sign-in errors (zcodeSignedIn /
-  // signedIn), which never reach this card. So the action is said here, on
-  // the card. "has ended" would also be wrong for an account that never
-  // started one, hence "no free Start Plan". "could not be read" is the
-  // other one: that is a reading that failed. The match is anchored on the whole
-  // card sentence, so the sign-in errors — which name the address themselves —
-  // and "could not be read" are left alone.
+  // ZCode with no GLM Coding Plan and no Start Plan left: nothing to spend,
+  // not a failed read (#1001). The plugin's card (NO_START, packages/zcode)
+  // names no way out, so it is said here; anchored on the whole sentence so
+  // the sign-in errors and "could not be read" are left alone.
   if (/^this account has no GLM Coding Plan, and ZCode's Start Plan has ended or was never started$/.test(err)) return t("ZCode: no GLM Coding Plan, and no free Start Plan — subscribe to a GLM Coding Plan to use this account");
   // an OpenCode Go key's windows (planWindows, planquota.go): Go is the
   // subscribing member's, in their workspace, so a key from anyone else
@@ -14428,7 +14405,7 @@ function runsOutText(w, when = resetClock) {
 
 // accountAction changes which account a provider uses, or which it has,
 // and leaves its editor open on the result.
-async function accountAction(path, body, okMsg, confirmed = false) {
+async function accountAction(path, body, okMsg, confirmed = false, say = (m) => m) {
   const key = path === "keys/remove" && providers?.providers?.find((p) => p.id === body.id)?.keyList?.find((k) => k.id === body.ref);
   if (!confirmed && (path === "login/forget" || path === "keys/remove") && !await confirmRemoval(body.user || key?.name || key?.masked || body.ref,
     "This account or key will stop being used for requests. You will need to add it again to use it.")) return false;
@@ -14440,7 +14417,7 @@ async function accountAction(path, body, okMsg, confirmed = false) {
     saidMoved(okMsg);
     return true;
   } catch (e) {
-    if (!editorError(e.message, "err")) status(e.message, "err");
+    if (!editorError(say(e.message), "err")) status(say(e.message), "err");
     document.querySelector(".editor .busy")?.classList.remove("busy");
     return false;
   }
@@ -16179,24 +16156,15 @@ function keyCards(list) {
   return gone.size ? list.filter((q) => !gone.has(q)).map((q) => merged.get(q) || q) : list;
 }
 
-// packUsage lays the Usage page's cards out in columns, each card as tall
-// as itself, the next in the order going to the column that ends highest
-// (huoranxuanyuan, #860: a tall Codex card beside Antigravity and a
-// DeepSeek balance left the short two mostly empty; 把 antigravity 和
-// deepseek 两个上下堆叠和 Codex 对齐). The order still reads left to right,
-// row by row as near as the heights allow, and the cards stay in it on the
-// page, for dragging, Alt+arrows and a screen reader alike. As many columns
-// as 260px each fit, unless one fewer leaves much less empty beside the
-// short cards for a page not much taller. Decided again when the cards
-// change or the width fits another number of columns; a card growing (a
-// fold opened) only packs them again, so what was clicked stays where it
-// was, even as the view's scrollbar comes in and takes some of the width
-// (in WebKit a card turned to every model went to one column under its
-// neighbour, the page following it). The last card in each column reaches
-// down to where the tallest column ends, so the bottoms line up: a row of
-// cards side by side is as tall as its tallest, and a short card stacked
-// under another ends with the tall one beside them (ikunbots on X: 卡片可以
-// 对齐吗). Each card is measured as tall as itself before that.
+// packUsage lays the Usage page's cards out in columns, each as tall as
+// itself, the next going to the column that ends highest (#860). The order
+// reads left to right and stays the page's, for dragging, Alt+arrows and a
+// screen reader. As many 260px columns as fit, unless one fewer leaves much
+// less empty for a page not much taller; decided again when the cards
+// change or the width fits another count. A card growing only packs them
+// again, so what was clicked stays put as the scrollbar comes and goes.
+// Each column's last card reaches down to the tallest column's end, so the
+// bottoms line up (ikunbots on X).
 const USAGE_MIN = 260, USAGE_GAP = 7;
 let usagePacked = null, usagePackFrame = 0;
 function packUsage() {
@@ -19202,6 +19170,43 @@ async function setTextSize(n) {
     status(e.message, "err");
   }
 }
+// The quick panel's own shortcut from any app (ben hanks): while its field
+// listens, a letter, digit, Space or F key with Ctrl, Alt or Cmd/Win (an F
+// key alone too) is sent as Wails names it (panelkey.go), ahead of the
+// keys below; Esc or leaving the field stops it. Wayland's desktop binds
+// it itself, to the command the row shows.
+let keyRec = false;
+const MAC = /^Mac/.test(navigator.platform);
+const keyName = (a) => MAC ? a.replace("Ctrl+", "⌃").replace("Option+", "⌥").replace("Shift+", "⇧").replace("Cmd+", "⌘")
+  : a.replace("Super", /^Win/.test(navigator.platform) ? "Win" : "Super");
+function renderPanelKey(s) {
+  const k = s.panelKeys || {}, box = $("#panelKey"), sub = $("#panelKeyRow .sub"), cur = s.panelShortcut || "";
+  $("#panelKeyRow").hidden = web;
+  sub.hidden = k.can && !(cur && k.taken === cur);
+  sub.textContent = k.can ? t("Another app already uses this shortcut") : t("Set it in your desktop's keyboard settings, to run {command}", { command: k.command });
+  const b = el("button", "key-rec" + (keyRec ? " on" : ""), keyRec ? t("Type shortcut") : cur ? keyName(cur) : t("Record shortcut"));
+  b.type = "button";
+  b.disabled = !k.can;
+  b.onclick = () => { keyRec = !keyRec; renderSettings(); };
+  b.onblur = () => setTimeout(() => { if (keyRec && !box.contains(document.activeElement)) { keyRec = false; renderSettings(); } });
+  const x = el("button", "key-clear", svg(CROSS, 10, 2));
+  x.type = "button";
+  x.setAttribute("aria-label", x.title = t("Clear"));
+  x.hidden = !cur;
+  x.onclick = () => { keyRec = false; prefWrite(api("settings/panel-shortcut", { shortcut: "" })); };
+  box.replaceChildren(b, x);
+  if (keyRec) b.focus({ preventScroll: true });
+}
+if (!web) addEventListener("keydown", (e) => {
+  if (!keyRec) return;
+  e.preventDefault();
+  e.stopImmediatePropagation();
+  if (e.key === "Escape") return void ((keyRec = false), renderSettings());
+  const c = e.code, f = /^F([1-9]|1\d|20)$/.test(c), k = /^(?:Key|Digit)(.)$/.exec(c)?.[1] || (f || c === "Space" ? c : "");
+  if (!k || !(f || e.ctrlKey || e.altKey || e.metaKey)) return;
+  keyRec = false;
+  prefWrite(api("settings/panel-shortcut", { shortcut: [e.ctrlKey && "Ctrl", e.altKey && (MAC ? "Option" : "Alt"), e.shiftKey && "Shift", e.metaKey && (MAC ? "Cmd" : "Super"), k].filter(Boolean).join("+") }));
+}, true);
 // Ctrl/Cmd + = and − step through the sizes, 0 goes back to 100%, in the
 // window and the panel alike; in a browser tab they are the browser's.
 if (!web) addEventListener("keydown", (e) => {
@@ -19812,6 +19817,7 @@ function renderSettings() {
   $("#textSizeSegs").title = t("Everything in magpie's windows, larger; {keys} too", { keys: textSizeKeys() });
   $("#textSizeSegs").replaceChildren(segs(TEXT_SIZES.map((n) => [n, n + "%"]), s.textSize || 100, (n) => setTextSize(n)));
   $("#traySegs").replaceChildren(segs(TRAYS.map(([id, name]) => [id, t(name)]), s.tray || "panel", (tray) => savePrefs({ ...keep, tray })));
+  renderPanelKey(s);
   // the Dock is the Mac's; the tray and the login item the app's
   $("#dockRow").hidden = !document.body.classList.contains("mac");
   $("#traySegs").parentElement.hidden = $("#loginSegs").parentElement.hidden = web;
@@ -20530,17 +20536,12 @@ const IN_USE = "|*";
 // the tray icon, side by side. The cards are the Usage page's, asked for
 // when the menu opens; any number are ticked in it.
 // suffixSegs: how the agents' lists name a model — with its provider's
-// (or "routing group") after it, all but the names the user gave models
-// and the groups they made (#92), or none (#335). Set on its own, so the
-// agents are told. Offered on Settings and where names are given, the
-// provider's Names & levels and over Routing's groups (#868: an agent's
-// narrow menu cut "· routing group" short, and the setting wasn't found;
-// in one group's editor it read as that group's, PAMI on Discord);
-// drawn(mode) redraws the place it was picked in.
-// The mode is read from the state's settings, which startup reads before
-// any page is drawn, not from Settings' own read, which only opening
-// Settings makes: Routing and the provider editor said On over a saved Off
-// until Settings had been opened (#1433, ObsidianArch02).
+// (or "routing group") after it, all but the user's own names (#92), or
+// none (#335). Set on its own, so the agents are told. Offered on Settings,
+// the provider's Names & levels and over Routing's groups (#868);
+// drawn(mode) redraws the place it was picked in. The mode is read from
+// the state's settings, read before any page is drawn, not Settings' own
+// read (#1433).
 function suffixMode(s = state.settings || {}) { return s.plainNames ? "off" : s.plainOwnNames ? "own" : "on"; }
 function suffixSegs(drawn) {
   const mode = suffixMode();
@@ -23599,7 +23600,9 @@ matchMedia("(max-width: 760px), (pointer: coarse) and (max-width: 1024px)").addE
 // centring and take the room between, and at the narrowest they draw in,
 // further still when they don't fit (the 560px window at 150%).
 function fitTop() {
-  const top = $(".top"), nav = $("#nav"), brand = $(".brand"), actions = $(".actions");
+  const top = $(".top"), nav = $("#nav"), brand = $(".brand"), actions = $(".actions"), st = $(".side-top");
+  st?.classList.remove("tight");
+  st?.classList.toggle("tight", st.scrollWidth > st.clientWidth);
   // a phone's browser: the tabs have a row of their own (app.css), at their size;
   // and beside the sidebar the header holds only where the reader is and the icons
   if (phoneWeb() || sideNav()) { top.classList.remove("tight", "cramped", "inrow", "crowded", "packed"); return; }
@@ -23608,8 +23611,7 @@ function fitTop() {
     // the buttons sit against the padding; under a page zoom (the text size)
     // their edge can measure a hair past it, which isn't running off (#457)
     if (a.right > top.getBoundingClientRect().right - parseFloat(getComputedStyle(top).paddingRight) + 0.5) return false;
-    // the sidebar's button, when shown, comes after the brand
-    const lead = $("#sideToggle")?.offsetParent ? $("#sideToggle") : brand;
+    const lead = brand.offsetParent ? brand : $("#sideToggle");
     const left = lead.offsetParent ? lead.getBoundingClientRect().right
       : top.getBoundingClientRect().left + parseFloat(getComputedStyle(top).paddingLeft);
     if (!nav?.offsetParent) return left + 8 <= a.left;
@@ -23668,17 +23670,17 @@ function layoutNav() {
     return;
   }
   layoutNav.done = true;
-  const side = $("#side"), nav = $("#nav"), brand = $(".brand"), prefs = $("#prefs");
+  const side = $("#side"), nav = $("#nav"), brand = $(".brand"), prefs = $("#prefs"), btn = $("#sideToggle");
   document.body.classList.toggle("side-nav", on);
   side.hidden = !on;
   $("#crumb").hidden = !on;
   if (on) {
-    side.querySelector(".side-top").append(brand);
+    side.querySelector(".side-top").append(btn, brand);
     side.querySelector(".side-scroll").append(nav);
     side.querySelector(".side-foot").prepend(prefs);
     nav.querySelector(":scope > .thumb")?.remove();
   } else {
-    $(".top").prepend(brand);
+    $(".top").prepend(btn, brand);
     $("#crumb").after(nav);
     $(".actions").insertBefore(prefs, $("#winclose"));
   }
