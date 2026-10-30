@@ -1,4 +1,4 @@
-// 类别模块就绪后再启动页面，避免首次渲染缺少入口回调。
+// The page starts once the category module is ready, so the first render already has its entry callbacks.
 import(document.querySelector("#omoCategoriesScript").href).then(() => {
 magpie.start();
 navHides(); // the pages built-in plugins switched off have, from boot.js

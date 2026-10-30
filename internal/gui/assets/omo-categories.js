@@ -11,7 +11,7 @@ window.omoCategoriesDetails = (a, kv) => {
   omoCategoryEditors.get(a.id).mount(kv(t("OmO settings")));
 };
 
-// 请求本机 OmO 类别接口，保留非 2xx 响应中的状态码与载荷（如 missing、conflict）
+// Ask the local OmO categories API, keeping the status and payload of a non-2xx reply (missing, conflict)
 async function requestOmoCategories(body) {
   const res = await fetch("/api/agents/omo/categories", {
     method: body ? "POST" : "GET",
@@ -75,7 +75,7 @@ function diffOmoCategories(baseCats, draftCats) {
   return { changes, invalid };
 }
 
-// 草稿与请求状态独立于 DOM；代理列表重绘时只重新绑定当前容器
+// Drafts and request state live outside the DOM; an agent-list redraw only re-binds the current container
 function createOmoCategoriesEditor(a) {
   let base = { path: "~/.omo/omo.jsonc", revision: "", status: "ready", error: "", categories: [], agents: [] };
   let draft = [];
@@ -86,7 +86,7 @@ function createOmoCategoriesEditor(a) {
   const expanded = new Set();
   let body, reloadHeadBtn, cancelBtn, saveBtn;
 
-  // 缺省子代理只提供可编辑空行，不替用户选择模型或写入默认值。
+  // A missing subagent gets an editable empty row: no model is picked for the user and no default is written.
   const baseRows = () => [...base.categories, ...(base.status === "ready" ? OMO_NAMED_AGENTS.map((name) => ({
     name, status: "ready", models: [],
     ...base.agents.find((row) => row.name === name), scope: "agents",

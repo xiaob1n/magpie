@@ -1,4 +1,4 @@
-// 使用隔离 HTTP 夹具验证本机 OmO 类别编辑，不读取真实用户配置。
+// Isolated HTTP fixtures check the local OmO category editor; the real user config is never read.
 const assert = require("node:assert/strict");
 const fs = require("node:fs/promises");
 const path = require("node:path");
@@ -31,7 +31,7 @@ const translated = (page, value) => page.evaluate((value) => t(value), value);
 async function reason(page, value, name = "quick", scope = "categories") {
   await press(scope === "agents" ? namedCard(page, name).locator(".omo-cat-reason-pick") : reasoning(page, name));
   const index = await page.evaluate((value) => pick.options.findIndex((o) => o.value === value), value);
-  assert(index >= 0, `推理选项存在: ${value}`);
+  assert(index >= 0, `reasoning option present: ${value}`);
   await page.locator(`#pop #list li[data-i="${index}"]`).click();
   await page.locator("#pop").waitFor({ state: "hidden" });
 }
@@ -42,7 +42,7 @@ function fixture(lang, theme = "light") {
     const req = route.request(), url = new URL(req.url());
     const json = (data, status = 200) => route.fulfill({ json: data, status });
     if (url.pathname === endpoint) {
-      assert.equal(url.search, "", "类别接口不接受客户端路径或 WSL 参数");
+      assert.equal(url.search, "", "the categories API takes no client path or WSL parameter");
       if (req.method() === "GET") {
         state.gets++;
         return json(state.current, state.readStatus);
@@ -53,7 +53,7 @@ function fixture(lang, theme = "light") {
       if (state.pendingPost) await state.pendingPost;
       if (state.conflict) return json({ ...state.current, error: "Omo categories changed; reload before saving" }, 409);
       if (state.saveFailure) return json({ error: "fixture save failed" }, 500);
-      // 模拟服务端重新读取：原条目的 index 重新编号，对象标记跟随原 index。
+      // Mimic the server reading again: original indexes are renumbered and the object flag follows the original index.
       for (const change of body.changes) {
         const category = state.current[change.scope === "agents" ? "agents" : "categories"].find((c) => c.name === change.name);
         if (change.models) {
@@ -98,14 +98,14 @@ async function setup(t, engine, lang) {
   page.setDefaultTimeout(6000);
   const errors = [], api = fixture(lang);
   page.on("pageerror", (error) => errors.push(error.message));
-  t.after(() => assert.deepEqual(errors, [], "页面没有未捕获异常"));
+  t.after(() => assert.deepEqual(errors, [], "the page threw no uncaught error"));
   await page.route("**/*", api.route);
   await page.goto("http://magpie.test/?view=agents");
   return { page, api };
 }
 
 async function open(page) {
-  // 先订阅精确响应，再触发读取；DOM 等待只用于对应编辑器的可见状态。
+  // Subscribe to the exact reply before triggering the read; a DOM wait only covers that editor's visible state.
   if (!await page.locator('.row.agent[data-id="omo"].expanded').count()) {
     await press(page.locator('.row.agent[data-id="omo"] .ag-link'));
   }
@@ -201,7 +201,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
 
     test(`${engine} ${lang}: local categories stage model edits and reread saved order`, { timeout: 60000 }, async (t) => {
       const { page, api } = await setup(t, engine, lang);
-      // 本机有入口，WSL 没有入口；打开之前不访问类别文件。
+      // The local row has an entry, WSL has none, and no category file is read before it opens.
       assert.equal(api.gets, 0);
       await press(page.locator('.row.agent[data-id="omo@wsl:Ubuntu"] .ag-link'));
       assert.equal(await page.locator('.row.agent[data-id="omo@wsl:Ubuntu"] :is(.omo-categories, .omo-categories-btn, .omo-categories-open)').count(), 0);
@@ -312,12 +312,12 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       await editor(page).waitFor({ state: 'hidden' });
       await open(page);
       assert.equal(await card(page).locator('input').inputValue(), 'pending-effort');
-      assert.equal(api.gets, reads, '刷新、收起及重开复用草稿，不能重复读取覆盖编辑');
+      assert.equal(api.gets, reads, 'refresh, collapse and reopen reuse the draft without another read overwriting the edit');
       assert.equal(await namedCard(page, 'plan-consultant').locator('.omo-cat-reason-pick').textContent(), await translated(page, 'max'));
       api.saveFailure = true;
       let release;
       api.pendingPost = new Promise((resolve) => { release = resolve; });
-      // 先监听 POST，再挂起响应；断言期间服务端绝不会提前完成保存。
+      // Await the POST before holding its reply; the assertion needs the save never to finish early.
       const requested = page.waitForRequest((r) => new URL(r.url()).pathname === endpoint && r.method() === "POST");
       const response = page.waitForResponse((r) => new URL(r.url()).pathname === endpoint && r.request().method() === "POST");
       try {
@@ -326,7 +326,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         const controls = await editor(page).locator("button, input, select").evaluateAll((elements) => elements.map((e) => ({ className: e.className, disabled: e.disabled })));
         assert(controls.length > 10);
         for (const name of namedAgents) assert.equal(await namedCard(page, name).locator('.omo-cat-reason-pick').isDisabled(), true);
-        assert.deepEqual(controls.filter((c) => !c.disabled), [], "保存期间所有草稿控件必须禁用，避免成功响应丢弃后续编辑");
+        assert.deepEqual(controls.filter((c) => !c.disabled), [], "every draft control is disabled while saving, so a late edit survives the success reply");
         assert.equal(api.posts.length, 1);
         assert.deepEqual(api.posts[0].changes, [{ name: "quick", reasoning: { value: "pending-effort" } }, { name: 'plan-consultant', scope: 'agents', reasoning: { value: 'max' } }]);
       } finally {

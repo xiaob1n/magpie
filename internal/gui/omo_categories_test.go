@@ -1,7 +1,5 @@
 package gui
 
-// allow: SIZE_OK — 用户限定的 API 验收文件集中覆盖真实路由，避免拆散已有隔离环境。
-
 import (
 	"encoding/json"
 	"io"
@@ -19,13 +17,13 @@ import (
 
 const omoCategoriesURL = "/api/agents/omo/categories"
 const omoCategoriesFixture = `{
-  // 保留未编辑的配置。
+  // keep untouched
   "categories": {"quick": {"models": ["vendor/first", {"model": "vendor/second", "temperature": 0.2}], "reasoning": "low"}},
   "other": {"keep": true}
 }`
 
 func TestOmoCategoriesNamedAgentsHTTP(t *testing.T) {
-	// 前提：真实路由读取没有 agent 覆盖的隔离配置。
+	// Premise: the real route reads an isolated config with no agent override.
 	p := omoCategoriesHome(t)
 	if err := os.WriteFile(p, []byte(omoCategoriesFixture), 0o600); err != nil {
 		t.Fatal(err)
@@ -37,14 +35,14 @@ func TestOmoCategoriesNamedAgentsHTTP(t *testing.T) {
 	if err := json.Unmarshal(get.Body.Bytes(), &doc); err != nil || get.Code != http.StatusOK || len(doc.Agents) != 4 || doc.Agents[0].Name != "explore" || len(doc.Agents[0].Models) != 0 {
 		t.Fatalf("GET agents: %d %s %v", get.Code, get.Body, err)
 	}
-	// 操作：通过同一文档同时保存 category 和具名 agent。
+	// Action: save a category and a named agent through the same document.
 	post := httptest.NewRecorder()
 	h.ServeHTTP(post, httptest.NewRequest(http.MethodPost, omoCategoriesURL, strings.NewReader(`{"revision":"`+doc.Revision+`","changes":[{"scope":"categories","name":"quick","reasoning":{"value":"high"}},{"scope":"agents","name":"plan-consultant","models":[{"model":"p/planner"}],"reasoning":{"value":"custom"}}]}`)))
 	var after agent.OmoCategories
 	if err := json.Unmarshal(post.Body.Bytes(), &after); err != nil || post.Code != http.StatusOK || len(after.Agents) != 4 || after.Agents[2].Models[0].Model != "p/planner" || *after.Agents[2].Reasoning != "custom" || *after.Categories[0].Reasoning != "high" {
 		t.Fatalf("POST agents: %d %s %v", post.Code, post.Body, err)
 	}
-	// 断言：再次 GET 与成功保存共享同一 revision。
+	// Assertion: the following GET and the successful save share one revision.
 	reloaded := httptest.NewRecorder()
 	h.ServeHTTP(reloaded, httptest.NewRequest(http.MethodGet, omoCategoriesURL, nil))
 	var readback agent.OmoCategories
@@ -86,7 +84,7 @@ func TestOmoCategoriesRejectsMalformedRequests(t *testing.T) {
 		`{"revision":"r","changes":[]} trailing`,
 	} {
 		t.Run(body, func(t *testing.T) {
-			// 前提：真实配置位于隔离 HOME。
+			// Premise: the real config lives under an isolated HOME.
 			path := omoCategoriesHome(t)
 			if err := os.WriteFile(path, []byte(omoCategoriesFixture), 0o600); err != nil {
 				t.Fatal(err)
@@ -95,10 +93,10 @@ func TestOmoCategoriesRejectsMalformedRequests(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			// 操作：通过完整 Handler 提交非法请求。
+			// Action: post an invalid request through the whole Handler.
 			rec := httptest.NewRecorder()
 			Handler(nil, nil).ServeHTTP(rec, httptest.NewRequest(http.MethodPost, omoCategoriesURL, strings.NewReader(strings.ReplaceAll(body, `"r"`, `"`+doc.Revision+`"`))))
-			// 断言：返回可显示的错误，配置未被覆盖。
+			// Assertion: a displayable error comes back and the config is not overwritten.
 			var out struct{ Error string }
 			if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil || rec.Code != http.StatusBadRequest || out.Error == "" {
 				t.Fatalf("invalid input: %d %s (%v)", rec.Code, rec.Body, err)
@@ -112,12 +110,12 @@ func TestOmoCategoriesRejectsMalformedRequests(t *testing.T) {
 }
 
 func TestOmoCategoriesMissingFile(t *testing.T) {
-	// 前提：隔离 HOME 没有全局配置。
+	// Premise: the isolated HOME has no global config.
 	omoCategoriesHome(t)
-	// 操作：读取类别。
+	// Action: read the categories.
 	rec := httptest.NewRecorder()
 	Handler(nil, nil).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, omoCategoriesURL, nil))
-	// 断言：缺失配置与空类别明确区分。
+	// Assertion: a missing config is told apart from empty categories.
 	var out struct{ Error string }
 	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil || rec.Code != http.StatusNotFound || out.Error == "" {
 		t.Fatalf("missing file: %d %s (%v)", rec.Code, rec.Body, err)
@@ -127,14 +125,14 @@ func TestOmoCategoriesMissingFile(t *testing.T) {
 func TestOmoCategoriesUsesHandlerProtection(t *testing.T) {
 	for _, method := range []string{http.MethodGet, http.MethodPost} {
 		t.Run(method, func(t *testing.T) {
-			// 前提：类别路由经过现有 Handler 防护。
+			// Premise: the category route sits behind the existing Handler guards.
 			omoCategoriesHome(t)
 			r := httptest.NewRequest(method, omoCategoriesURL, strings.NewReader(`{}`))
 			r.Header.Set("Origin", "null")
-			// 操作：不受信任的页面请求配置。
+			// Action: an untrusted page asks for the config.
 			rec := httptest.NewRecorder()
 			Handler(nil, nil).ServeHTTP(rec, r)
-			// 断言：在读取或写入之前拒绝。
+			// Assertion: it is refused before any read or write.
 			if rec.Code != http.StatusForbidden {
 				t.Fatalf("untrusted page: %d %s", rec.Code, rec.Body)
 			}
@@ -143,28 +141,28 @@ func TestOmoCategoriesUsesHandlerProtection(t *testing.T) {
 }
 
 func TestOmoCategoriesUsesWebAuthentication(t *testing.T) {
-	// 前提：浏览器端沿用现有认证包装。
+	// Premise: the browser side uses the existing authentication wrapper.
 	omoCategoriesHome(t)
 	h := webGuard("categories", "secret", 0, Handler(nil, nil))
-	// 操作：没有认证 cookie 的请求。
+	// Action: a request without the auth cookie.
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, omoCategoriesURL, nil))
-	// 断言：未认证请求无法读取本机文件。
+	// Assertion: an unauthenticated request cannot read a local file.
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("unauthenticated: %d %s", rec.Code, rec.Body)
 	}
 }
 
 func TestOmoCategoriesReadIOError(t *testing.T) {
-	// 前提：配置路径是目录，不能作为文件读取。
+	// Premise: the config path is a directory, which cannot be read as a file.
 	path := omoCategoriesHome(t)
 	if err := os.Mkdir(path, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	// 操作：通过真实 Handler 读取。
+	// Action: read through the real Handler.
 	rec := httptest.NewRecorder()
 	Handler(nil, nil).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, omoCategoriesURL, nil))
-	// 断言：IO 错误不伪装成成功或空类别。
+	// Assertion: an I/O error is not passed off as success or as no categories.
 	var out struct{ Error string }
 	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil || rec.Code != http.StatusInternalServerError || out.Error == "" {
 		t.Fatalf("read IO error: %d %s (%v)", rec.Code, rec.Body, err)
@@ -174,15 +172,15 @@ func TestOmoCategoriesReadIOError(t *testing.T) {
 func TestOmoCategoriesOnlyLocalRoute(t *testing.T) {
 	for _, url := range []string{"/api/agents/codex/categories", "/api/agents/omo@wsl:Ubuntu/categories", "/api/agents/omo/categories/other"} {
 		t.Run(url, func(t *testing.T) {
-			// 前提：只允许固定的本机类别路由。
+			// Premise: only the fixed local category route is served.
 			path := omoCategoriesHome(t)
 			if err := os.WriteFile(path, []byte(omoCategoriesFixture), 0o600); err != nil {
 				t.Fatal(err)
 			}
-			// 操作：向非目标路由提交内容。
+			// Action: post to a route that is not the target.
 			rec := httptest.NewRecorder()
 			Handler(nil, nil).ServeHTTP(rec, httptest.NewRequest(http.MethodPost, url, strings.NewReader(`{}`)))
-			// 断言：请求不成功，也没有编辑本机文件。
+			// Assertion: the request fails and no local file is edited.
 			if rec.Code < 400 {
 				t.Fatalf("non-local route accepted: %d %s", rec.Code, rec.Body)
 			}
@@ -195,7 +193,7 @@ func TestOmoCategoriesOnlyLocalRoute(t *testing.T) {
 }
 
 func TestOmoCategoriesLiveSaveAndReload(t *testing.T) {
-	// 前提：真实 HTTP 服务和磁盘配置均位于隔离环境。
+	// Premise: the real HTTP server and the on-disk config both sit in an isolated environment.
 	path := omoCategoriesHome(t)
 	if err := os.WriteFile(path, []byte(omoCategoriesFixture), 0o600); err != nil {
 		t.Fatal(err)
@@ -228,10 +226,10 @@ func TestOmoCategoriesLiveSaveAndReload(t *testing.T) {
 		return doc
 	}
 	before := call(http.MethodGet, "")
-	// 操作：交换并编辑对象模型，保存后重新读取。
+	// Action: swap and edit object models, save, then read again.
 	saved := call(http.MethodPost, `{"revision":"`+before.Revision+`","changes":[{"name":"quick","models":[{"model":"custom/replaced","index":1},{"model":"vendor/first","index":0}],"reasoning":{"value":"high"}}]}`)
 	after := call(http.MethodGet, "")
-	// 断言：回读数据与磁盘一致，保留对象额外字段和未编辑区域。
+	// Assertion: the read-back matches the disk, keeping object extras and the regions not edited.
 	if before.Path != path || before.Status != "ready" || saved.Revision == before.Revision || after.Revision != saved.Revision || len(after.Categories) != 1 {
 		t.Fatalf("revision/readback: before=%+v saved=%+v after=%+v", before, saved, after)
 	}
@@ -244,12 +242,12 @@ func TestOmoCategoriesLiveSaveAndReload(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Logf("saved file: %s", b)
-	for _, kept := range []string{`"temperature": 0.2`, `"other": {"keep": true}`, "// 保留未编辑的配置。"} {
+	for _, kept := range []string{`"temperature": 0.2`, `"other": {"keep": true}`, "// keep untouched"} {
 		if !strings.Contains(string(b), kept) {
 			t.Fatalf("lost %s: %s", kept, b)
 		}
 	}
-	// 旧页面的再次保存必须失败，不覆盖已保存结果。
+	// A second save from the old page must fail without overwriting the saved result.
 	res, err := server.Client().Post(server.URL+omoCategoriesURL, "application/json", strings.NewReader(`{"revision":"`+before.Revision+`","changes":[]}`))
 	if err != nil {
 		t.Fatal(err)

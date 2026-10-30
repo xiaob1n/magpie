@@ -1,7 +1,5 @@
 package agent
 
-// allow: SIZE_OK — 配置层读写验收集中于用户限定的唯一测试文件，按行为拆分测试而不新增文件。
-
 import (
 	"crypto/sha256"
 	"encoding/json"
@@ -28,7 +26,7 @@ func omoCategoriesFile(t *testing.T, text string) string {
 }
 
 func TestOmoCategoriesNamedAgentsAbsent(t *testing.T) {
-	// 前提：没有内置覆盖，读取不能生成运行时默认值。
+	// Premise: no built-in override exists, so a read must not invent a runtime default.
 	p := omoCategoriesFile(t, `{}`)
 	doc, err := ReadOmoCategories()
 	if err != nil {
@@ -39,7 +37,7 @@ func TestOmoCategoriesNamedAgentsAbsent(t *testing.T) {
 			t.Fatalf("absent agents: %+v", doc.Agents)
 		}
 	}
-	// 操作：空保存不创建任何覆盖。
+	// Action: an empty save creates no override.
 	if _, err := SaveOmoCategories(doc.Revision, nil); err != nil {
 		t.Fatal(err)
 	}
@@ -50,7 +48,7 @@ func TestOmoCategoriesNamedAgentsAbsent(t *testing.T) {
 }
 
 func TestOmoCategoriesNamedAgentsAtomicRoundtrip(t *testing.T) {
-	// 前提：相同名字分属两个集合，保留自定义 agent 和对象参数。
+	// Premise: the same name exists in both collections, and a custom agent and object parameters must survive.
 	p := omoCategoriesFile(t, `{"categories":{"explore":{"models":["category/old"]}},"agents":{"explore":{"models":[{"model":"agent/old","extra":17}],"prompt":"keep"},"custom":{"models":false}},"other":true}`)
 	doc, err := ReadOmoCategories()
 	if err != nil {
@@ -60,7 +58,7 @@ func TestOmoCategoriesNamedAgentsAtomicRoundtrip(t *testing.T) {
 	models := []OmoCategoryModelEdit{{Model: "agent/new", Index: &i}}
 	category := []OmoCategoryModelEdit{{Model: "category/new"}}
 	added := []OmoCategoryModelEdit{{Model: "agent/added"}}
-	// 操作：一次保存两个集合，同时显式创建缺少的内置覆盖。
+	// Action: one save touches both collections and creates the missing built-in override explicitly.
 	after, err := SaveOmoCategories(doc.Revision, []OmoCategoryChange{
 		{Name: "explore", Models: &category},
 		{Scope: "agents", Name: "explore", Models: &models},
@@ -87,7 +85,7 @@ func TestOmoCategoriesNamedAgentsAtomicRoundtrip(t *testing.T) {
 }
 
 func TestOmoCategoriesNamedAgentsLegacy(t *testing.T) {
-	// 前提：单模型旧输入仍是可编辑覆盖，未知字段不能被迁移删除。
+	// Premise: a legacy single `model` entry is still an editable override, and unknown fields must not be dropped by migration.
 	p := omoCategoriesFile(t, `{"agents":{"explore":{"model":"old/model","extra":7,"reasoning":"low"}}}`)
 	doc, err := ReadOmoCategories()
 	if err != nil || doc.Agents[0].Status != "ready" || len(doc.Agents[0].Models) != 1 || doc.Agents[0].Models[0].Model != "old/model" {
@@ -95,7 +93,7 @@ func TestOmoCategoriesNamedAgentsLegacy(t *testing.T) {
 	}
 	i := 0
 	models := []OmoCategoryModelEdit{{Model: "new/model", Index: &i}}
-	// 操作：按读取的索引编辑并清除推理覆盖。
+	// Action: edit by the index that was read and clear the reasoning override.
 	after, err := SaveOmoCategories(doc.Revision, []OmoCategoryChange{{Scope: "agents", Name: "explore", Models: &models, Reasoning: &OmoCategoryReasoning{}}})
 	if err != nil || after.Agents[0].Models[0].Model != "new/model" || after.Agents[0].Reasoning != nil {
 		t.Fatalf("legacy save: %+v %v", after, err)
@@ -109,7 +107,7 @@ func TestOmoCategoriesNamedAgentsLegacy(t *testing.T) {
 func TestOmoCategoriesMalformedAgents(t *testing.T) {
 	for _, value := range []string{`null`, `[]`, `false`, `"bad"`} {
 		t.Run(value, func(t *testing.T) {
-			// 操作：顶层 agents 非对象不能读取或被任何保存覆盖。
+			// Action: a non-object top-level agents is neither read nor overwritten by any save.
 			raw := `{"agents":` + value + `}`
 			p := omoCategoriesFile(t, raw)
 			if _, err := ReadOmoCategories(); err == nil {
@@ -133,7 +131,7 @@ func TestOmoCategoriesNamedAgentInvalidEditIsAtomic(t *testing.T) {
 		{Scope: "agents", Name: "plan-reviewer"},
 	} {
 		t.Run(string(change.Scope)+change.Name, func(t *testing.T) {
-			// 前提：批次前一项有效，后一项指向非法集合、名字或损坏行。
+			// Premise: the first change of the batch is valid, the second names a bad scope, name or broken row.
 			raw := `{"categories":{"a":{}},"agents":{"plan-reviewer":null}}`
 			p := omoCategoriesFile(t, raw)
 			doc, err := ReadOmoCategories()
@@ -142,7 +140,7 @@ func TestOmoCategoriesNamedAgentInvalidEditIsAtomic(t *testing.T) {
 			}
 			high := "high"
 			change.Reasoning = &OmoCategoryReasoning{Value: &high}
-			// 操作：非法项拒绝整个批次。
+			// Action: an invalid change rejects the whole batch.
 			_, err = SaveOmoCategories(doc.Revision, []OmoCategoryChange{{Name: "a", Reasoning: &OmoCategoryReasoning{Value: &high}}, change})
 			if !errors.Is(err, ErrOmoCategoriesInput) {
 				t.Fatal(err)
@@ -158,13 +156,13 @@ func TestOmoCategoriesNamedAgentInvalidEditIsAtomic(t *testing.T) {
 func TestOmoCategoriesNamedAgentMalformedRows(t *testing.T) {
 	for _, value := range []string{`null`, `{"model":{"model":"not-a-scalar"}}`, `{"models":false}`, `{"models":[null]}`, `{"models":[" "]}`, `{"reasoning":false}`} {
 		t.Run(value, func(t *testing.T) {
-			// 前提：损坏的具名行不能伪装成缺省行。
+			// Premise: a broken named row must not pass for one that is absent.
 			omoCategoriesFile(t, `{"agents":{"explore":`+value+`}}`)
 			doc, err := ReadOmoCategories()
 			if err != nil || doc.Agents[0].Status != "error" || doc.Agents[0].Error == "" || len(doc.Agents[0].Models) != 0 {
 				t.Fatalf("malformed row: %+v %v", doc, err)
 			}
-			// 操作：损坏行的模型和推理都拒绝编辑。
+			// Action: neither the models nor the reasoning of a broken row may be edited.
 			high := "high"
 			if _, err := SaveOmoCategories(doc.Revision, []OmoCategoryChange{{Scope: "agents", Name: "explore", Reasoning: &OmoCategoryReasoning{Value: &high}}}); !errors.Is(err, ErrOmoCategoriesInput) {
 				t.Fatal(err)
@@ -174,7 +172,7 @@ func TestOmoCategoriesNamedAgentMalformedRows(t *testing.T) {
 }
 
 func TestOmoCategoriesRead(t *testing.T) {
-	// 给定带 BOM、对象模型和动态类别名的配置。
+	// Given a config with a BOM, an object model and a dynamic category name.
 	raw := "\xef\xbb\xbf{\r\n // keep\r\n \"categories\": {"
 	for i := range 9 {
 		if i > 0 {
@@ -187,7 +185,7 @@ func TestOmoCategoriesRead(t *testing.T) {
 	t.Setenv("OMO_CODING_AGENT_DIR", t.TempDir())
 	file(t, strings.TrimSuffix(p, "c"), `{"categories":{}}`)
 	got, err := ReadOmoCategories()
-	// 读取真实磁盘，版本包含 BOM，且不受 agent 目录覆盖影响。
+	// Read from a real disk: the revision covers the BOM and no agent folder overrides the file.
 	if err != nil || got.Status != "ready" || got.Path != p || got.Revision != fmt.Sprintf("%x", sha256.Sum256([]byte(raw))) || len(got.Categories) != 9 {
 		t.Fatalf("%+v: %v", got, err)
 	}
@@ -260,7 +258,7 @@ func TestOmoCategoriesMalformedAndLegacy(t *testing.T) {
 }
 
 func TestOmoCategoriesDiskRoundtrip(t *testing.T) {
-	// 给定保留区域、对象参数、BOM 和 CRLF。
+	// Given kept regions, object parameters, a BOM and CRLF line endings.
 	raw := "\xef\xbb\xbf{\r\n // keep\r\n \"_migrations\": {\"x\":true},\r\n \"categories\": {\r\n  \"a.b\": {\"models\":[\"p/a\",{\"model\":\"p/b\",\"extra\":{\"n\":2}}],\"reasoning\":\"high\",\"prompt\":\"keep\"},\r\n  \"other\": { \"models\": [\"p/c\"] },\r\n },\r\n}\r\n"
 	p := omoCategoriesFile(t, raw)
 	before, err := ReadOmoCategories()

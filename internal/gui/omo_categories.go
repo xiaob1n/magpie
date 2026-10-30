@@ -10,7 +10,7 @@ import (
 	"github.com/yetone/magpie/internal/agent"
 )
 
-// omoCategoriesAPI 只编辑本机全局配置，路径由配置层决定。
+// omoCategoriesAPI edits the local global config only; the config layer decides the path.
 func omoCategoriesAPI(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/agents/omo/categories", func(rw http.ResponseWriter, r *http.Request) {
 		doc, err := agent.ReadOmoCategories()

@@ -1,7 +1,5 @@
 package agent
 
-// allow: SIZE_OK — 用户限定同一配置文件承载两个集合，保持一次加锁、版本核对与原子写入。
-
 import (
 	"crypto/sha256"
 	"encoding/json"
@@ -55,7 +53,7 @@ type OmoCategoryChange struct {
 
 type OmoCategoryScope string
 
-// 省略 scope 沿用类别；显式值只接受两个集合名。
+// An omitted scope means categories; an explicit one must name one of the two collections.
 func (s *OmoCategoryScope) UnmarshalJSON(raw []byte) error {
 	var value string
 	if err := json.Unmarshal(raw, &value); err != nil {
@@ -68,18 +66,18 @@ func (s *OmoCategoryScope) UnmarshalJSON(raw []byte) error {
 	return nil
 }
 
-// Index 引用同一 revision 下原列表的位置；省略时新增字符串，不能由客户端覆盖对象参数。
+// Index refers to a position in the original list under the same revision; without it the model is added as a plain string, so a client can never set object parameters.
 type OmoCategoryModelEdit struct {
 	Model string `json:"model"`
 	Index *int   `json:"index,omitempty"`
 }
 
-// 外层 nil 表示不改，Value 为 nil 表示删除，否则设置非空字符串。
+// A nil pointer leaves reasoning unchanged, a nil Value removes it, and any other value sets that non-empty string.
 type OmoCategoryReasoning struct {
 	Value *string `json:"value"`
 }
 
-// ReadOmoCategories 只读本机全局配置，不读取 agent 目录或迁移旧字段。
+// ReadOmoCategories reads the local global config only: no agent folder, and no legacy field migration.
 func ReadOmoCategories() (OmoCategories, error) {
 	doc, _, _, err := readOmoCategories()
 	return doc, err
@@ -175,7 +173,7 @@ func readOmoCategory(name string, value gjson.Result, named bool) OmoCategory {
 	return c
 }
 
-// SaveOmoCategories 在进程内串行化读取、版本核对和一次写入；外部无协作写入仍可能竞争 rename。
+// SaveOmoCategories serializes the read, revision check and write within this process; a writer outside that doesn't cooperate can still race the rename.
 func SaveOmoCategories(revision string, changes []OmoCategoryChange) (OmoCategories, error) {
 	omoCategoriesMu.Lock()
 	defer omoCategoriesMu.Unlock()
@@ -274,7 +272,7 @@ func SaveOmoCategories(revision string, changes []OmoCategoryChange) (OmoCategor
 	return ReadOmoCategories()
 }
 
-// 写入前再次核对快照，缩小补丁计算期间的外部修改窗口；此检查不是文件系统 CAS。
+// The snapshot is checked again before writing, shrinking the window for an outside change while the patch is computed; this check is not a filesystem CAS.
 func writeOmoCategories(doc OmoCategories, out []byte) error {
 	current, err := os.ReadFile(doc.Path)
 	if errors.Is(err, os.ErrNotExist) {

@@ -39,7 +39,7 @@ three.
 
 ### OmO categories API and inline rows
 
-The shared document now includes `agents`, using the same entry schema as
+The shared document includes `agents`, using the same entry schema as
 `categories`, in fixed order `explore`, `librarian`, `plan-consultant`,
 `plan-reviewer`. An absent override is `{ "name": "explore", "status": "ready",
 "models": [] }` with reasoning omitted, not a runtime fallback. POST changes
@@ -57,8 +57,7 @@ and is editable. Model edits write `models`, preserving the old scalar and all
 unknown fields. A canonical `models` array takes precedence on subsequent
 reads. Missing agents have no configured flag. Indexed object model edits
 preserve extra parameters exactly as category edits do. A malformed top-level
-`agents` object fails GET and POST instead of being overwritten. These backend
-capabilities do not by themselves assert that the panel displays agent rows.
+`agents` object fails GET and POST instead of being overwritten.
 
 The API and GUI are implemented as inline rows under Agents > OmO, for the
 local `omo` row only. It must not route `omo@wsl:*` to local files. The editor
@@ -137,13 +136,14 @@ session's final merged settings. Project, profile and harness settings can
 override these values. Saved changes do not alter running tasks. Restart
 OmO to load the changes."
 
-Isolated-HOME Handler tests, live HTTP GET/POST/GET with disk inspection and a
-race/shuffle run cover the API. All 32 pinned Chromium/WebKit English/Chinese
-GUI regressions passed in one run, with desktop/mobile light/dark screenshots
-inspected. The targeted Go command is
-`go test -tags nogui ./internal/agent ./internal/gui ./internal/edit`; UI
-checks use the repository's `make test-ui` entry point. No real OmO model task
-is needed.
+`TestOmoCategories*` in [`internal/agent`](../../internal/agent/omo_categories_test.go)
+and [`internal/gui`](../../internal/gui/omo_categories_test.go) cover an isolated
+HOME, the live HTTP round trip with disk inspection, malformed input, conflict
+and the Handler's existing guards.
+[`omo-categories.test.cjs`](../../internal/gui/tests/omo-categories.test.cjs)
+drives the inline rows in Chromium and WebKit, in English and Chinese, and is
+run by `make test-ui`. The targeted Go command is
+`go test -tags nogui ./internal/agent ./internal/gui ./internal/edit`.
 
 ### Allowance card refreshes
 

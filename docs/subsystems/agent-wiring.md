@@ -41,9 +41,8 @@ something else shows up as drift.
 
 ## OmO category editor
 
-The configuration API and inline GUI are implemented. All 32 pinned
-Chromium/WebKit English/Chinese regressions passed in one run, and the
-desktop/mobile light/dark screenshot matrix passed. The editor covers local
+The configuration API and inline GUI edit local OmO's global category and
+named-agent configuration. The editor covers local
 OmO's global category and named-agent configuration. This is not
 the main-model wiring in [`omo.go`](../../internal/agent/omo.go), which uses
 `piLike` and the agent folder's `settings.json` and `models.json`. The editor
