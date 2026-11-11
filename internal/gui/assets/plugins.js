@@ -1201,7 +1201,10 @@
     if (e.tools?.length) nm.append(kindChip("tl"));
     if (e.page) nm.append(kindChip("pg"));
     if (e.panels?.length) nm.append(kindChip("pn"));
-    if (e.providers?.length || !(e.gatewayOnly || e.middlewareOnly || e.inMagpieOnly || toolsOnly || (mw && !e.isMiddleware) || (ag && !e.isAgent))) nm.append(kindChip("pv"));
+    // a page (or panels) with no providers of its own is a UI plugin: it
+    // runs a host part for its local service, not to sign anything in
+    const uiOnly = !!(e.page || e.panels?.length) && !e.providers?.length;
+    if (e.providers?.length || !(uiOnly || e.gatewayOnly || e.middlewareOnly || e.inMagpieOnly || toolsOnly || (mw && !e.isMiddleware) || (ag && !e.isAgent))) nm.append(kindChip("pv"));
     who.append(nm);
     const subs = subsOf(pkg);
     const sub = el("div", "sub");
@@ -1232,7 +1235,7 @@
         else if (!x.signedIn && subs.some((y) => y.signedIn)) s.title = t("{name} is a subscription of its own; {other} works without it", { name: x.name, other: subs.find((y) => y.signedIn).name });
         sub.append(s);
       }
-    } else if ((mw || ag || gw || e.isGateway || toolsOnly || (e.page || e.panels?.length) && e.inMagpieOnly) && !e.providers.length) {
+    } else if ((mw || ag || gw || e.isGateway || toolsOnly || ((e.page || e.panels?.length) && (e.inMagpieOnly || uiOnly))) && !e.providers.length) {
       // only middleware, a request hook, an agent, tools, a page or panels: its own line says what it does
     } else if (clashes.length && !e.providers.length) {
       // its own line below says whose it is
